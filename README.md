@@ -66,7 +66,7 @@ I thank Stefan Müller for sharing his lab session materials for his QTA course 
 
 - **Readings**:
   -  Benoit, K., Watanabe, K., Wang, H, Nulty, P., Obeng, A., Müller, & Matsuo, A. (2018). Quanteda: An R package for the quantitative analysis of textual data. Journal of Open Source Software, 3(30), 774.
-  - Baden, C., Pipal, C., Schoonvelde, M. & van der Velden, M.A.G., (2022). Three Gaps in Computational Text Analysis Methods for Social Sciences: A Research Agenda. Communication Methods and Measures, 16(1): pp. 1–18.
+  - Baden, C., Pipal, C., Schoonvelde, M. & van der Velden, M.A.C.G., (2022). Three Gaps in Computational Text Analysis Methods for Social Sciences: A Research Agenda. Communication Methods and Measures, 16(1): pp. 1–18.
 
 *Day 3 - July 11*
 
@@ -78,22 +78,21 @@ I thank Stefan Müller for sharing his lab session materials for his QTA course 
   -  Grimmer, J ., Roberts, M.E., and Stewart, B.M. (2022). Text as Data: A New Framework for Machine Learning and the Social Sciences. Princeton: Princeton University Press: chapter 8.
   - Rodriguez, P.L. and Spirling, A., (2022). Word embeddings: What works, what doesn't, and how to tell the difference for applied research. The Journal of Politics, 84(1): pp.101–115.
   
-
 *Day 4 - July 12*
 
 -	**Lecture**: What can we do with dictionaries and how can we validate them? Sensitivity and specificity.
 
--	**Lab**: Examining similarity and complexity of documents. 
+-	**Lab**: Categorizing texts using off-the-shelf and home-made dictionaries. 
 
 - **Readings**
-  - Grimmer, J.., Roberts, M.E., and Stewart, B.M. (2022). Text as Data: A New Framework for Machine Learning and the Social Sciences. Princeton: Princeton University Press: chapter 16.
+  - Grimmer, J., Roberts, M.E., and Stewart, B.M. (2022). Text as Data: A New Framework for Machine Learning and the Social Sciences. Princeton: Princeton University Press: chapter 16.
   - Rauh, C., (2018). Validating a sentiment dictionary for German political language–a workbench note. Journal of Information Technology & Politics, 15(4): pp.319–343.
 
 *Day 5 - July 15*
 
 -	**Lecture**: Human coding (or machine coding) and document classification using supervised machine learning. Evaluating a classifier.
 
--	**Lab**: Categorizing texts using off-the-shelf and home-made dictionaries. Using LLMs to do the coding for you.
+-	**Lab**: Binary classification of documents using a simple classifier.
 
 - **Readings**:
   - Daniel Jurafsky and James H. Martin (2020). Speech and Language Processing: An Introduc- tion to Natural Language Processing, Computational Linguistics, and Speech Recognition. 3rd edition: Chapter 4
