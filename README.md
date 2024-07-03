@@ -16,7 +16,7 @@ To facilitate communication and interaction throughout the course we will make u
 | ------------- |:-------------:| ------------- |:-------------:|
 | July  9   | [.pdf]( )| July  16   | [.pdf]( ) |
 | July  10   | [.pdf]()| July  17   | [.pdf]() |
-| July  11   | [.pdf]() ) | July  18   | [.pdf]() |
+| July  11   | [.pdf]() | July  18   | [.pdf]() |
 | July  12   | [.pdf]()| July  10   |[.pdf]() |
 | July  15   | [.pdf]()| July  21   | [.pdf]() |
 
