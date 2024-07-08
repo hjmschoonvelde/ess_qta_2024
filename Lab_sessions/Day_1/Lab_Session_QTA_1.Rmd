@@ -2,10 +2,10 @@
 title: "QTA Lab Session 1 -- Introduction to R. Text as an object in R"
 output:
   #github_document:
-  #html_document:
-  #  theme: readable
-    md_document:
-      variant: markdown_github
+  html_document:
+    theme: readable
+  #  md_document:
+  #    variant: markdown_github
       
 #date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---

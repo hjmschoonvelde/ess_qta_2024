@@ -14,7 +14,7 @@ To facilitate communication and interaction throughout the course we will make u
 
 | Date        | Slides           |  Date        | Slides           |
 | ------------- |:-------------:| ------------- |:-------------:|
-| July  9   | [.pdf](  Slides/Slides_QTA_1.pdf)| July  16   | [.pdf]( ) |
+| July  9   | [.pdf](Slides/Slides_QTA_1.pdf)| July  16   | [.pdf]( ) |
 | July  10   | [.pdf]()| July  17   | [.pdf]() |
 | July  11   | [.pdf]() | July  18   | [.pdf]() |
 | July  12   | [.pdf]()| July  10   |[.pdf]() |
