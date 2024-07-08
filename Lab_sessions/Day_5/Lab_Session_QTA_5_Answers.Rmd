@@ -1,0 +1,298 @@
+---
+title: "Categorizing text using dictionaries"
+output:
+  github_document:
+  html_document:
+    theme: readable
+  pdf_document: default
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results = TRUE)
+```
+
+This document describes how to use dictionary methods in **quanteda**. Let's first load the required libraries. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+library(quanteda)
+library(stringr)
+library(tidyverse)
+library(quanteda.sentiment)
+
+```
+
+Let's save the inaugural speeches as an object `speeches_inaugural`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+speeches_inaugural <- data_corpus_inaugural
+
+```
+
+We'll first tokenize this corpus and create a dfm
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+tokens_inuagural <- tokens(speeches_inaugural,
+                           what = "word",
+                           remove_punct = TRUE, 
+                           remove_symbols = TRUE, 
+                           remove_numbers = FALSE,
+                           remove_url = TRUE,
+                           remove_separators = TRUE,
+                           split_hyphens = FALSE,
+                           padding = FALSE
+                       )
+
+dfm_inaugural <- dfm(tokens_inuagural)
+
+```
+
+## Off-the shelf dictionaries ##
+
+**quanteda.sentiment** contains a number of off-the-shelf sentiment dictionaries. Let's take a look at the Lexicoder Sentiment Dictionary from Young and Soroka (2012). It's stored in `quanteda.textmodels` as a dictionary object under `data_dictionary_LSD2015`. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+summary(data_dictionary_LSD2015)
+
+print(data_dictionary_LSD2015, max_nval = 5)
+
+```
+
+We can use `dfm_lookup` to apply it to the inaugural speeches:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+dfm_inaugural_LSD <- dfm_lookup(dfm_inaugural, 
+                                dictionary = data_dictionary_LSD2015)
+
+head(dfm_inaugural_LSD)
+```
+*Question*: The columns that contain negations of positive sentiment and of negative sentiment contain zeroes. Why is this?
+
+We can calculate the relative fraction of negative sentiment tokens to positive sentiment tokens in each speech as follows:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+#fraction of negative words
+docvars(dfm_inaugural, "neg_words") <- as.numeric(dfm_inaugural_LSD[,1])
+
+#fraction of positive words
+docvars(dfm_inaugural, "pos_words") <- as.numeric(dfm_inaugural_LSD[,2])
+
+#sentiment score
+docvars(dfm_inaugural, "LSD_sentiment")  <-  (docvars(dfm_inaugural, "pos_words") - docvars(dfm_inaugural, "neg_words"))/ntoken(dfm_inaugural)
+
+docvars(dfm_inaugural, c("President", "LSD_sentiment"))
+```
+
+Let's do the same, but this time with the NRC Word-Emotion Association Lexicon
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+dfm_inaugural_NRC <- dfm_lookup(dfm_inaugural, 
+                                dictionary = data_dictionary_NRC)
+
+
+#fraction of negative words (NB: located in the 6th column in the dfm)
+docvars(dfm_inaugural, "neg_NRC_words") <- as.numeric(dfm_inaugural_NRC[,6])
+
+#fraction of positive words (NB: located in the 7th column in the dfm)
+docvars(dfm_inaugural, "pos_NRC_words") <- as.numeric(dfm_inaugural_NRC[,7])
+
+#sentiment score
+docvars(dfm_inaugural, "NRC_sentiment")  <- (docvars(dfm_inaugural, "pos_NRC_words") - docvars(dfm_inaugural, "neg_NRC_words"))/ntoken(dfm_inaugural)
+
+head(docvars(dfm_inaugural, c("President", "NRC_sentiment")))
+```
+
+Let's plot the correlation
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+cor(docvars(dfm_inaugural, "LSD_sentiment"), docvars(dfm_inaugural, "NRC_sentiment"))
+
+correlation_plot_LSD_NRC <- ggplot(docvars(dfm_inaugural), aes(LSD_sentiment, NRC_sentiment)) + 
+  geom_point(pch = 21, fill = "gray25", color = "white", size = 2.5) +
+  scale_x_continuous(name = "NRC sentiment") +
+  scale_y_continuous(name = "LSD sentiment") +
+  theme_minimal()
+
+print(correlation_plot_LSD_NRC)
+
+```
+
+The correlation of 0.76 is pretty good since both measures intend to capture the same construct 
+
+As a last step we'll inspect if Presidents make use of narrative arches in their speeches. For example, they may start a speech more subdued and end on a more positive note. Or they may start positive and end positive. Let's first create a paragraph-based dfm of Obama's inaugural speeches
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+obama_corpus <- corpus_subset(speeches_inaugural, President == "Obama") %>%
+  corpus_reshape(to =  "paragraph")
+
+ndoc(obama_corpus)
+
+obama_tokens <- tokens(obama_corpus,
+                           what = "word",
+                           remove_punct = TRUE, 
+                           remove_symbols = TRUE, 
+                           remove_numbers = FALSE,
+                           remove_url = TRUE,
+                           remove_separators = TRUE,
+                           split_hyphens = FALSE,
+                           padding = FALSE
+                       )
+
+obama_dfm <- dfm(obama_tokens)
+
+```
+
+Let's apply the NRC dictionary to this dfm
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+obama_dfm_NRC <- dfm_lookup(obama_dfm, 
+                                dictionary = data_dictionary_NRC)
+
+docvars(obama_dfm, "neg_words") <- as.numeric(obama_dfm_NRC[,6])
+
+docvars(obama_dfm, "pos_words") <- as.numeric(obama_dfm_NRC[,7])
+
+#sentiment score
+docvars(obama_dfm, "NRC_sentiment")  <-  (docvars(obama_dfm, "pos_words") - docvars(obama_dfm, "neg_words"))/ntoken(obama_dfm)
+```
+
+Let's plot this
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+table(docvars(obama_dfm, "Year"))
+
+docvars(obama_dfm, "sentence") <- NA
+docvars(obama_dfm, "sentence")[1:36] <- 1:36
+docvars(obama_dfm, "sentence")[37:65] <- 1:29
+
+obama_plot <- ggplot(docvars(obama_dfm), aes(sentence, NRC_sentiment)) + 
+  geom_smooth() +
+  scale_x_continuous(name = "Sentence") +
+  scale_y_continuous(name = "NRC sentiment") +
+  theme_minimal() + facet_grid(~Year)
+
+print(obama_plot)
+```
+
+## Self made dictionaries
+
+When working with your own dictionary, most of the work will go into evaluating its validity and reliability in order to make sure that it captures the construct that you are looking for. However, once you have settled on a dictionary, it is easy in **quanteda** to apply it to a corpus. 
+
+Let's say where are interested in how often these presidents refer to the economy
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+#create a dictionary
+econ_dict <- dictionary(list(Economy = c("econ*", "job*", "employ*", "industr*", "business*", "market*")))
+
+econ_dict_dfm <- dfm_lookup(dfm_inaugural, 
+                            dictionary = econ_dict)
+
+dim(econ_dict_dfm)
+head(econ_dict_dfm)
+```
+
+
+If we want to average the average number of mentions per speaker we can save these dictionary results as a variable in our corpus object. Let's call it `economy`.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+docvars(speeches_inaugural, "economy") <- as.numeric(econ_dict_dfm) / ntoken(dfm_inaugural)
+
+
+lineplot_economy <- ggplot(docvars(speeches_inaugural),
+                                aes(x = Year, y = economy)) +
+  geom_smooth() + theme_minimal()
+
+
+print(lineplot_economy)
+
+```
+
+
+## Excercise
+
+Create a dictionary titled `threat_dictionary`, with threat as a key and threat, peril, risk, danger as values
+
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+threat_dict <- dictionary(list(threat = c("threat", "peril*", "risk", "danger*")))
+```
+
+Apply this dictionary to `dfm_inaugural` and call the resulting object `dfm_inaugural_threat`. Append the results in the docvars of `speeches_inaugural` as a variable `threat` containing the fraction of threat words in each speech
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+dfm_inaugural_threat <- dfm_lookup(dfm_inaugural, 
+                                dictionary = threat_dict)
+
+docvars(speeches_inaugural, "threat") <- as.numeric(dfm_inaugural_threat) / ntoken(dfm_inaugural)
+
+```
+
+Plot the fraction of threat words over time
+
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+
+lineplot_threat<- ggplot(docvars(speeches_inaugural),
+                                aes(x = Year, y = threat)) +
+  geom_line() + theme_minimal()
+
+
+print(lineplot_threat)
+```
+
+Apply the NRC emotion detection lexicon to `dfm_inaugural` and append a varioble called nrc_fear as metadata to `speeches_inaugural` that contains the fraction of NRC fear words in each speech.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+dfm_inaugural_fear <- dfm_lookup(dfm_inaugural, 
+                                dictionary = data_dictionary_NRC)
+
+docvars(speeches_inaugural, "nrc_fear") <- as.numeric(dfm_inaugural_fear[,4]) / ntoken(dfm_inaugural)
+```
+
+Plot the fraction of fear words over time
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+lineplot_fear<- ggplot(docvars(speeches_inaugural),
+                                aes(x = Year, y = nrc_fear)) +
+  geom_line() + theme_minimal()
+
+
+print(lineplot_fear)
+
+```
+
+Calculate the correlation between nrc.fear and threat, and produce a scatterplot
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+cor(docvars(speeches_inaugural, "threat"), docvars(speeches_inaugural, "nrc_fear"))
+
+correlation_plot_ <- ggplot(docvars(speeches_inaugural), aes(threat, nrc_fear)) + 
+  geom_point(pch = 21, fill = "gray25", color = "white", size = 2.5) +
+  scale_x_continuous(name = "Threat score") +
+  scale_y_continuous(name = "NRC fear score") +
+  theme_minimal()
+
+print(correlation_plot_)
+
+```
+
+Reflect on these results
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+#your answer here
+```

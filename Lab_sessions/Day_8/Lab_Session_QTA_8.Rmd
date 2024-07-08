@@ -1,0 +1,376 @@
+---
+title: "QTA Day 8: Topic models"
+output:
+  github_document:
+  html_document:
+    theme: readable
+  pdf_document: default
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results = TRUE, warning = FALSE)
+```
+
+This document gives some examples of how to estimate LDA, STM and semisupervised topic models in `R`. For these examples, we will use the corpus `data_corpus_ungd2017` which contains the speeches from the UN General Assembly in 2017 and is available in **quanteda.corpora**. 
+
+Let's load necessary libraries first. We will estimate LDA topic models using the **seededlda** library and structural topic models using the **stm** library.
+
+
+```{r, echo = TRUE, results = 'verbatim', warning = FALSE, message = FALSE}
+
+#load libraries
+library(quanteda)
+library(quanteda.textmodels)
+library(quanteda.textplots)
+library(quanteda.corpora)
+library(quanteda.textstats)
+library(seededlda)
+library(stm)
+library(ggplot2)
+library(tidyverse)
+
+corpus_speeches <- data_corpus_ungd2017
+
+summary(corpus_speeches, n = 10)
+
+```
+.As you can see the corpus contains 196 speeches, one from each UN member state. Let's tokenise this corpus. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+#tokenise the corpus
+
+tokens_speeches <- tokens(corpus_speeches,
+                          what = "word",
+                          remove_punct = TRUE, 
+                          remove_symbols = TRUE, 
+                          remove_numbers = TRUE,
+                          remove_url = TRUE,
+                          remove_separators = TRUE,
+                          split_hyphens = FALSE,
+                          ) %>%
+  tokens_remove(stopwords(source = "smart"), padding = TRUE)
+
+```
+
+Let's append collocations that occur 10 times or more
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+collocations <- tokens_speeches %>%
+ # tokens_sample(size = 100, replace = FALSE) %>%
+  textstat_collocations(min_count = 10,
+                        size = 2:3) %>%
+  arrange(-lambda)
+
+head(collocations, 50)
+
+tokens_speeches <- tokens_compound(tokens_speeches, collocations)
+
+```
+
+Let's include only those tokens that appear in the speeches of at least 5 countries and maximum 150 countries
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+dfm_speeches <- dfm(tokens_speeches) %>%
+     dfm_trim(min_docfreq = 5, 
+             max_docfreq = 150) 
+
+#check the number of documents and features
+dim(dfm_speeches)
+
+
+```
+
+## Estimating an LDA topic model
+
+Let's estimate a topic model with 10 topics. This may take a few minutes, depending on your system. _k_ refers to the number of topics to be estimated; this is a parameter determined by the researcher. The $\aplha$ parameter has an impact on the topic distribution in each document (more on that in the exercises). In order to make the results reproducible, we'll use `set.seed()`. We'll set the maximum number of iterations at 1000 to speed up estimation (the argument defaults to 2000 iterations).
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+set.seed(123)
+
+lda_10 <- textmodel_lda(dfm_speeches, 
+                       k = 10,
+                       alpha = 1,
+                       max_iter = 1000)
+
+
+```
+
+Take a look at the output of the topic model with 10 topics. For example, we can take a look at the 10 highest-loading terms for each of *k* topics.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+terms(lda_10, 10)
+
+```
+
+In order to obtain the topic that loads highest on each document, we can use the `topics` function. We can append this as a variable to our `docvars`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+head(topics(lda_10), 10)
+
+docvars(dfm_speeches, "topic") <- topics(lda_10)
+
+# cross-table of the topic frequency
+table(docvars(dfm_speeches, "topic"))
+
+```
+
+The topic proportions in each document are stored in an object called theta ($\theta$)
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+head(lda_10$theta, 10)
+```
+
+Let's confirm that column sums of $\theta$ add up to one. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+head(rowSums(lda_10$theta), 10)
+```
+
+## Visualizing a LDA topic model
+
+Let's say we are interested in topic 8 which deals (in my case) with nuclear weapons, treaties, north korea, etc. We can store the document proportions for this topic in the docvars of our dfm, and call it `nuclear_weapons_topic'
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+ 
+docvars(dfm_speeches, 'nuclear_weapons_topic') <- lda_10$theta[, 8]
+
+```
+
+Let's plot the nuclear weapons topic
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+topic_plot <- ggplot(docvars(dfm_speeches), aes(y = reorder(country_iso, nuclear_weapons_topic), 
+                               x = nuclear_weapons_topic)) + 
+  geom_bar(stat = "identity") + theme_minimal() + scale_x_continuous("Nuclear weapons topic") +
+  scale_y_discrete("Country") +
+  theme(axis.text.y = element_text(angle = 0), size = 0.1) + theme_minimal()
+
+print(topic_plot)
+
+```
+
+
+Take a look at topic proportions for each country
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+#append the topic proportions
+
+topic_probabilities <- lda_10$theta
+rownames(topic_probabilities) <- rownames(dfm_speeches)
+
+heatmap(as.matrix(topic_probabilities[]))
+```
+
+In a heatmap, darker colors correspond with higher proportions, whereas lighter colors denote lower proportions. In addition, it displays a clustering of countries and topics?
+
+## Estimating a Structural topic model
+
+Structural topic models allow us to model topical content and topical prevalence as a function of metadata. We can estimate an stm using the `stm()` function in the **stm** library. Let's first estimate an stm without any metadata and 3 topics (NB: estimating an **stm** is a bit slow, hence the small number of topics)
+
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+stm_3 <- stm(dfm_speeches, 
+              data = docvars(dfm_speeches),
+              seed = 123,
+              K = 3,
+              verbose = FALSE,
+             init.type = "Spectral")
+
+```
+
+We can inspect the estimated topics using the `labelTopics()` function in the **stm** library
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+labelTopics(stm_3)
+
+```
+
+We can also plot this model using `plot()`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+plot(stm_3)
+```
+
+`findThoughts()` returns the topic documents associated with a topic
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+findThoughts(stm_3,texts = as.character(corpus_speeches), n = 1, topics = c(1))
+             
+```
+
+Let's now estimate an stm but this time we include metadata. To this end we will first create a dummy variable that denotes whether a country's gdp per capita is smaller than 10000 dollar. We will use `ifelse()` for this. For some countries we do not have data on GDP. In order for stm with metadata to work, we'll remove those from our dfm.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+docvars(dfm_speeches, "gdp_dummy") <- ifelse(docvars(dfm_speeches, "gdp_per_capita") < 10000, 1, 0)
+
+dfm_speeches <- dfm_subset(dfm_speeches, !is.na(gdp_dummy))
+```
+
+Let's investigate if the content of estimated topics is dependent on a country's income by estimating an stm with 3 topics and modeling topical content as a function of our gdp_dummy variable. To speed up estimation, we will only focus on European countries, and we let the maximum number of EM (expectation maximization) steps to be no more than 50. Still, estimating this topic model may take a few minutes. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+dfm_speeches_europe <- dfm_subset(dfm_speeches, continent == "Europe")
+table(docvars(dfm_speeches_europe, "gdp_dummy"))
+
+stm_3_metadata <- stm(dfm_speeches_europe, 
+                      data = docvars(dfm_speeches_europe),
+                      seed = 123,
+                      content = ~ gdp_dummy,
+                      K = 3,
+                      max.em.its = 50,
+                      verbose = TRUE,
+                      init.type = "Spectral")
+```
+
+Using `estimateEffect()` we estimate a regression where documents are the units, the outcome is the proportion of each document about a topic in an STM model and the covariates are document-meta data. This allows us to compare topic proportions for both groups of countries (i.e., rich and poor)
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+eff_gdp <- estimateEffect(
+  1:3 ~ gdp_dummy, 
+  stmobj = stm_3_metadata, 
+  meta = docvars(dfm_speeches_europe))
+
+```
+
+Let's plot these topic proportions
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+plot(eff_gdp, "gdp_dummy",
+     cov.value1 = "< 10000",
+     cov.value2 = "> 10000",
+     method = "difference")
+```
+We don't see any noticeable differences here but keep in mind that we estimated this model on only a small number
+
+
+## Seeded LDA
+
+In a last step, let's estimate a seeded topic model. This topic model is semi-supervised, and requires a set of dictionary words to structure each topic. We'll use a very short dictionary of four topics. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+
+dictionary <- dictionary(list(terrorism = c("terroris*"), 
+                              environment = c("sustainable_development", "global_warming"),
+                              migration = c("migra*", "refugee"),
+                              economy = c("econo*", "development")))
+
+```
+
+Now let's run the `seededlda()` function and inspect the model output
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+lda_seed <- textmodel_seededlda(dfm_speeches, 
+                                dictionary, 
+                                batch_size = 0.01, 
+                                auto_iter = TRUE,
+                                verbose = FALSE)
+
+terms(lda_seed)
+
+head(lda_seed$theta, 10)
+
+```
+
+The `seededlda()` package also allows for unseeded topics. If we want to include 6 unseeded topics, we add the argument `residual = 6`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+lda_seed_res <- textmodel_seededlda(dfm_speeches, 
+                                    dictionary, 
+                                    residual = 6, 
+                                    batch_size = 0.01, 
+                                    auto_iter = TRUE,
+                                    verbose = FALSE)
+
+terms(lda_seed_res)
+
+head(lda_seed_res$theta, 10)
+
+```
+
+## Exercises
+
+Estimate an LDA model with 5 topics on `dfm_speeches` and alpha = 1. Call the model `lda_5`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+```
+
+Display the 10 highest loading terms for each topic
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+```
+
+
+Show the topic distributions of `lda_5` in the first 20 documents.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+```
+
+Estimate another model with 5 topics, but this time with an alpha parameter equal to 10. Call it `lda_5_alpha_10`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+```
+
+Show the topic distributions of `lda_5_alpha_10` in the first 20 documents. How do these topic distributions compare to those in `lda_5`. What effect do you think the alpha parameter has. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+
+```
+
+
+## Optional 
+
+Estimate an stm with 5 topics, using the `europe` variable as metadata. Call it `stm_5_europe`. NB: You can create a binary variable of `europe` using the `continent` variable in document level metadata and the `ifelse()` function. 
+
+```{r}
+
+```
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+```
+
+Plot these topics
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+```
+
+
+Using `estimateEffect()` we estimate a regression where documents are the units, the outcome is the proportion of each document about a topic in an STM model and the covariate is the europe variable. Call the output `eff_europe`. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+
+
+```
+
+Let's plot these topic proportions
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+```
+
+
+

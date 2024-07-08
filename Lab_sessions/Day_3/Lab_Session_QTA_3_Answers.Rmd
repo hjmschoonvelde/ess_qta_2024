@@ -1,0 +1,313 @@
+---
+title: "QTA Day 3: Reading in text data. Working with a bag of words"
+output:
+  github_document:
+  html_document:
+    theme: readable
+  pdf_document: default
+#date: "`r format(Sys.time(), '%d %B, %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results = TRUE)
+```
+
+In this document we will go through the steps of going from raw texts to a document term matrix that can be analyzed.
+
+
+## Load libraries
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+library(quanteda)
+library(stringr)
+library(quanteda.textstats)
+library(quanteda.textplots)
+library(tidyverse)
+
+```
+
+## Reading in data
+
+Let's take a look a set of UK prime minister speeches from the [EUSpeech](https://dataverse.harvard.edu/dataverse/euspeech) dataset. 
+
+
+Read in the speeches as follows using the `read.csv()` function: 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+speeches <- read.csv(file = "speeches_uk.csv", 
+                     header = TRUE, 
+                     stringsAsFactors = FALSE, 
+                     sep = ",", 
+                     encoding = "UTF-8")
+```
+
+This `read.csv()` call tells `R` that:
+
+1. speeches_uk.csv contains a header (i.e., variable names)
+2. we don't want string variables to be turned into factors
+3. speeches_uk.csv separates variables using a comma
+4. the encoding is UTF\_8, which refers to a particular way that bytes are turned into textual characters that we can read.
+
+Let's take a look at the structure of this dataset:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+str(speeches)
+
+```
+
+As you can see, the corpus contains 787 speeches and variables containing meta data like speaker, country, date, etc. Take a look at a few speeches. Let's do some very light cleaning on these speeches, using the `stringr` library, in particular the `str_replace_all()` we learned about yesterday. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+#remove html tags
+speeches$text <- str_replace_all(speeches$text, "<.*?>", "")
+#replace multiple white spaces with single white spaces
+speeches$text <- str_squish(speeches$text)
+  
+```
+
+Our speeches object is currently a dataframe. To be able to apply functions in `quanteda` on this object it needs to recognize it as a corpus object. To do this we can use the `corpus()` function
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+corpus_speeches <- corpus(speeches, 
+                          text_field = "text")
+
+#the ndoc function displays the number of documents in the corpus
+ndoc(corpus_speeches)
+
+```
+
+Metadata such as speaker, date, etc. are stored in a corpus object as docvars, and can be accessed like so (we'll use the `head()` function to limit the output):
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+#date
+head(docvars(corpus_speeches, "date"), 10)
+
+#speaker
+head(docvars(corpus_speeches, "speaker"), 10)
+
+#number of speeches per speaker
+
+table(docvars(corpus_speeches, "speaker"))
+
+```
+
+Let's tokenize this corpus. We'll use the argument `padding=TRUE` to leave an empty string where the removed tokens previously existed. This is useful if a positional match is needed between the pre- and post-selected tokens, for instance if collocations need to be computed.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+tokens_speech <- corpus_speeches %>%
+    tokens(remove_punct = TRUE, padding = TRUE) %>%
+  tokens_remove(stopwords("en"))
+  
+```
+
+Let's check the most occurring collocations (this may take a few seconds)
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+collocations <- tokens_speech %>%
+  textstat_collocations(min_count = 10) %>%
+  arrange(-lambda)
+
+head(collocations, 10)
+
+```
+
+
+We may also focus on proper names only by looking for collocations of adjacent words starting with capital letters
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+collocations_names <- tokens_select(tokens_speech, 
+                                    pattern = "[A-Z]", 
+                                    valuetype = "regex", 
+                                    case_insensitive = FALSE, 
+                                    padding = TRUE) %>%
+  textstat_collocations(min_count = 10,
+                        tolower = FALSE)
+head(collocations_names, 20)
+
+```
+
+If we want to add the most surprising collocations to our tokens object we can do so using `tokens_compund`:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+collocations <- collocations %>%
+  filter(lambda > 10) %>%
+  pull(collocation) %>%
+  phrase()
+
+tokens_speech <- tokens_compound(tokens_speech, collocations)
+
+```
+
+
+Let's create a new tokens object, but this time we group it by speaker by applying `tokens_group(groups = speaker)` This concatenates the tokens in the speeches of all 3 speakers. We thus end up with a tokens object that consists of 3 documents.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+tokens_speech_speaker <- corpus_speeches %>%
+  tokens(remove_punct = TRUE) %>%
+  tokens_remove(stopwords("en")) %>%
+  tokens_group(groups = speaker)
+
+ndoc(tokens_speech_speaker)
+  
+```
+
+Now let's construct a dfm 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+speeches_dfm_speaker <- dfm(tokens_speech_speaker)
+
+```
+
+It's straightforward in **quanteda** to inspect a dfm. For example, the `topfeatures()` function displays the most occurring features: 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+topfeatures(speeches_dfm_speaker, 20)
+
+```
+
+You can check the number of features in the dfm using the dim() function: 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+dim(speeches_dfm_speaker)
+
+```
+
+There are over 44,000 features in this dfm. Let's select those tokens that appear at least 10 times by using the `dfm_trim()` function
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+speeches_dfm_speaker = dfm_trim(speeches_dfm_speaker, min_termfreq = 10)
+dim(speeches_dfm_speaker)
+
+```
+As you can see, this reduces the size of the dfm considerably. However, be mindful that applying such arbitrary cutoffs may remove meaningful features. 
+
+*NB:* Because most words don't occur in most documents, a dfm often contains many zeroes (sparse). Internally, `quanteda` stores the dfm in a sparse format, which means that the zeroes are not stored, so you can create a dfm of many documents and many words without running into memory problems.
+
+## Visualization in **quanteda**
+
+**quanteda** contains some very useful functions to plot your corpus in order get a feel for what is going on For example, it is easy to construct a wordcloud to see which features appear most often in your corpus.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+textplot_wordcloud(speeches_dfm_speaker, max_words=50)
+
+```
+
+A slightly more informative frequency plot can be constructed as follows (using the **ggplot2** library):
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+speeches_dfm_features <- textstat_frequency(speeches_dfm_speaker, n = 25)
+
+# Sort by reverse frequency order
+speeches_dfm_features$feature <- with(speeches_dfm_features , reorder(feature, -frequency))
+
+ggplot(speeches_dfm_features, aes(x = feature, y = frequency)) +
+    geom_point() + theme_minimal() + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+
+*NB*  **ggplot2** is a really nice library for making plots and figures. If you have some time after this course is over, I strongly recommend Kieran Healy's [book](https://socviz.co/) on Data Visualization for learning more about effective data viz.
+
+Let's say we are interested in which words are spoken relatively more often by David Cameron than by Tony Blair and Gordon Brown. For this we can use `textstat_keyness()` and `textplot_keyness()` functions. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+head(textstat_keyness(speeches_dfm_speaker, target = "D. Cameron"), 10)
+
+textplot_keyness(textstat_keyness(speeches_dfm_speaker, target = "D. Cameron"), n = 10)
+```
+
+## Exercises
+
+Display the most occurring three-word-collocations
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+collocations_3 <- tokens_speech %>%
+  textstat_collocations(size = 3,
+                        min_count = 10) %>%
+  arrange(-lambda)
+
+head(collocations_3, 10)
+
+```
+
+Display the most occurring three-word-collocations that are also proper names
+
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+collocations_names_3 <- tokens_select(tokens_speech, 
+                                    pattern = "[A-Z]", 
+                                    valuetype = "regex", 
+                                    case_insensitive = FALSE, 
+                                    padding = TRUE) %>%
+  textstat_collocations(min_count = 10,
+                        size = 3,
+                        tolower = FALSE)
+head(collocations_names_3, 10)
+
+```
+
+
+Apply `kwic()` to `tokens_speech` object and look up "european_union". Inspect the context in which the EU is mentioned.
+
+```{r}
+
+kwic(tokens_speech, "european_union")
+
+```
+
+
+Create a dfm from `tokens_speech` and call it `speeches_dfm`:
+
+```{r}
+
+speeches_dfm <- dfm(tokens_speech)
+
+```
+
+Check how many documents and features `speeches_dfm` has.
+
+```{r}
+
+dim(speeches_dfm) 
+
+```
+
+
+Trim `speeches_dfm` so that it only contains words that appear in at least 20 speeches. Inspect the number of features.
+
+```{r}
+
+speeches_dfm <- dfm_trim(speeches_dfm, 
+                         min_docfreq = 20)
+
+dim(speeches_dfm)
+
+```
+
+Apply `textstat_keyness` to the `speeches_dfm_speaker` object to display 5 the most distinctive features for Gordon Brown
+
+```{r}
+head(textstat_keyness(speeches_dfm_speaker, target = "G. Brown"), 5)
+```
+
+

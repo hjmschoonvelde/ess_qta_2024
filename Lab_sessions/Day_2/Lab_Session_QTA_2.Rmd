@@ -1,0 +1,318 @@
+---
+title: "QTA Day 2: String operations and inspecting a corpus"
+output:
+  github_document:
+  html_document:
+    theme: readable
+  pdf_document: default
+#date: "`r format(Sys.time(), '%d %B, %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results = TRUE)
+```
+
+
+## String operations 
+
+`R` stores text as a `string` or `character` vector. It is important to become comfortable with string operations, since they allow you to clean a string before you start analyzing your text. 
+
+These string operations require familiarity with regular expressions in `R` as well as with functions in the **stringr** library.^[`R` is open source with different developers working on similar issues, as a result of which there can be multiple packages that do the same thing. For example, functions in base `R` and the **stringi** package also let you manipulate strings in `R`. However, the syntax of the function calls in these different libraries is different.] 
+
+Libraries like **quanteda** include some string cleaning functions as well but knowledge of regular expressions and string operations allow you to deal with the particulars of your text. That being said, these operations usually involve lots of trial and error as well as using Google to figure out how to do certain things. But they help you clean your data, which will save you lot of headaches later on. Let's take a look at a set of useful functions.
+
+First load the `stringr` library in `R`.
+
+```{r, out.width='\\textwidth', message=FALSE, warning=FALSE}
+
+library(stringr)
+
+```
+
+Then create a string vector called shopping_list:
+
+```{r, out.width='\\textwidth'}
+
+shopping_list <- c("apples x45!", "loaf of bread", "Bag of sugar", "milk x2 or x3")
+
+```
+
+Vectors are basic objects in `R` which contain a set of values of the same type (character, numeric, factor, etc.) The shopping_list contains four character strings Check that this is true with the `str()` function: 
+
+```{r, out.width='\\textwidth'}
+
+str(shopping_list)
+
+```
+
+The `stringr` library contains many useful functions for working with character values, which are listed in this [cheat sheet](https://github.com/rstudio/cheatsheets/blob/master/strings.pdf). Let's go through a few examples, starting with the `str_extract
+()` function, which takes in two arguments: a string and a pattern to look for. For each string it returns the pattern it found. Let's see if it finds a B in each of the strings:
+
+```{r, out.width='\\textwidth'}
+
+str_extract(shopping_list, "B")
+
+```
+
+Functions in the `stringr` library can work with regular expressions. For example, execute the following line of code:
+
+```{r, out.width='\\textwidth'}
+
+str_extract(shopping_list, "\\d")
+
+```
+
+Here `d` is a regular expression which refers to any number (**NB**: without the escape character `\\` it would just refer to the letter d) . See happens when you replace `d` with `d+` like so: `str_extract(shopping_list, "\\d+")`. What does the + do?
+
+```{r, out.width='\\textwidth'}
+
+#your answer here
+
+```
+
+Let's turn to alphabetic characters (aka letters)
+
+```{r, out.width='\\textwidth'}
+#extract first lower case character in a string
+str_extract(shopping_list, "[a-z]")
+
+#extract lower case characters one or more times (again note the "+" symbol after "[a-z]")
+str_extract(shopping_list, "[a-z]+")
+
+#extract up to four lower case letters occurring in a row
+str_extract(shopping_list, "[a-z]{1,4}")
+
+#extract up to four upper OR lower case letters
+str_extract(shopping_list, "[A-z]{1,4}")
+
+#extract all letters in each string
+str_extract_all(shopping_list, "[A-z]+")
+str_extract_all(shopping_list, "\\d")
+
+#note that str_extract_all generates a list of character strings as output. 
+#this can be simplified into a character matrix using the simplify command
+
+str_extract_all(shopping_list, "\\b[A-z]+\\b", 
+                simplify = TRUE)
+
+str_extract_all(shopping_list, "\\d", 
+                simplify = TRUE)
+
+```
+
+Let's have a look at the `str_replace()` function. This function takes in three arguments: _string, pattern and replacement_. The string is the string it is inspecting; the pattern is what the function is looking for; and the replacement denotes what it replaces the pattern with.
+
+```{r, out.width='\\textwidth'}
+
+#replace first match
+str_replace(shopping_list, "[aeiou]", "-")
+
+#replace all matches
+str_replace_all(shopping_list, "[aeiou]", "-")
+
+```
+
+The following table contains a set of useful functions in the `stringr` package that help you perform string operations in *R*. 
+
+![Stringr functions, taken from Chapter 8 of Automated Data Collection With R, by Munzert *et al* (2015). ]( stringr.png ){ width=65% }
+
+
+In *R*, you write regular expressions as strings, sequences of characters surrounded by quotes ("") or single quotes (''). Characters like +, ?, ^, and . have a special meaning in regular expressions and cannot be represented directly in an R string (see the RegEx [cheat sheet](https://github.com/rstudio/cheatsheets/blob/master/strings.pdf) for more examples). In order to match them literally, they need to be preceded by two backslashes: ``\\".
+
+```{r, out.width='\\textwidth'}
+
+name_list <- c("Jo.hn", "Anna.", "Si.+si")
+```
+
+Compare the output of these two calls
+```{r, out.width='\\textwidth'}
+
+str_replace(name_list, ".", "-")
+str_replace(name_list, "\\.", "-")
+
+```
+
+Ccompare the output of these two calls
+```{r, out.width='\\textwidth'}
+
+str_replace(name_list, ".+", "-")
+str_replace(name_list, "\\.\\+", "-")
+
+```
+
+## Inspecting a corpus
+
+For the next part of this script we'll first need to load the **quanteda** library:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+library(quanteda)
+
+```
+
+**quanteda** has several in-built corpora we can use for exercises. One of these corpora is `data_corpus_inaugural` which contains the inaugural speeches of all the American presidents in a corpus format. Type `summary(data_corpus_inaugural)` and inspect the object.
+
+```{r}
+
+summary(data_corpus_inaugural,  n = 10)
+
+```
+
+Let's make a copy of this corpus. We'll save it in our working environment as an object called `speeches_inaugural`
+
+```{r}
+
+speeches_inaugural <- data_corpus_inaugural
+
+```
+
+We can inspect the content of the first inaugural speech using `as.character()` function:
+
+
+```{r}
+
+as.character(speeches_inaugural)[1]
+
+```
+
+Metadata such as year, speaker, etc. are stored in a corpus object as _docvars_, and can be accessed like so:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+#year
+docvars(speeches_inaugural, "Year")
+
+#party
+head(docvars(speeches_inaugural, "Party"), 10)
+
+#number of presidents of each party
+table(docvars(speeches_inaugural, "Party"))
+
+```
+
+Subsetting a corpus is easy using the `corpus_subset()` function. Note the `==` operator here. In `R` `=` denotes an assignment operator, whereas `==` denotes equal to. We can for example create an object that only contains the inaugural speech of Donald Trump and call it `trump_inaugural`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+trump_inaugural <- corpus_subset(speeches_inaugural, President == "Trump")
+
+ndoc(trump_inaugural)
+
+```
+
+As you can see, Trump only appears only one time in the corpus. That's because he got voted out of office in 2020.
+
+```{r, out.width='\\textwidth'}
+
+as.character(trump_inaugural)
+
+```
+
+If the documents are clean enough (i.e., with correct interpunction etc.), then it is easy in **quanteda** to break down a document on a sentence to sentence basis using `corpus_reshape()`, which creates a new corpus with each sentence a `document'
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+trump_sentence <- corpus_reshape(trump_inaugural, to =  "sentences")
+
+ndoc(trump_sentence)
+
+```
+
+As you can see, Trump's inaugural speech consisted of 88 sentences.
+
+Before we preprocess our texts, we first need to tokenize it using `tokens()`.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+tokens_speeches_inaugural <- tokens(speeches_inaugural)
+
+```
+
+We can create multiword expressions using `tokens_compound()`. Let's say we want to make certain that references to the United States are recognized as such in subsequent analyses. We can do so using the following line of code: 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+tokens_speeches_inaugural <- tokens_compound(tokens_speeches_inaugural, phrase("United States of America"))
+
+```
+
+Let's see how often each President referred to the United States
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+str_count(as.character(speeches_inaugural), "United States of America")
+
+```
+
+Using the `kwic()` function, we can inspect the context in which the United States is used in these speeches:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+kwic(tokens_speeches_inaugural, 
+     pattern = phrase("United_States_of_America"),
+     window = 10)  %>%
+  tail()
+
+```
+
+## Excercise: inspecting a corpus
+
+For these exercises we'll use the `speeches_inaugural` corpus that we just created.
+
+Explore `corpus_subset()` and filter only speeches delivered since 1990. Store this object as `speeches_inaug_since1990`. 
+
+```{r}
+
+#your answer here
+
+```
+
+Explore `corpus_reshape()`. Reshape `speeches_inaugural`to the level of sentences and store this object as `sentences_inaug_since1990`. What is the number of sentences (= number of documents) in this text corpus?
+
+```{r}
+
+#your answer here
+
+```
+
+Inspect how often references to the `pursuit of happiness` occur in this corpus:
+
+```{r}
+
+
+```
+
+Tokenize the sentence-level text corpus. Make sure that references to the `Supreme Court` and `pursuit of happiness`  are included as multiword expressions.  
+  
+
+```{r}
+
+#your answer here
+
+```
+
+Use corpus_reshape() and change the unit of `speeches_inaug_since1990` to the level of paragraphs. How many paragraphs does this corpus contain?
+
+```{r}
+
+#your answer here
+
+```
+
+## Excercise: cleaning a text vector
+
+The local zoo has made an inventory of its animal stock.^[This exercise is based on an example from Automated Data Collection With R, by Munzert *et al* (2015).]  However, the zoo keepers did a messy job with writing up totals as you can see below. You are hired to clean up the mess using *R*.
+
+```{r, out.width='\\textwidth'}
+zoo <- c("bear x2", "Ostric7", "platypus x60", "x7 Eliphant", "x16 conDOR")
+```
+
+Use the functions in the `stringr` to clean up the string, taking out typos. Generate an *R* dataframe with the following variables: *animal* (character), *number* (numeric). 
+
+```{r, out.width='\\textwidth'}
+
+#your answer here
+
+```
+
+

@@ -1,0 +1,433 @@
+---
+title: "QTA Day 7: Scaling methods"
+output:
+  github_document:
+  html_document:
+    theme: readable
+  pdf_document: default
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, results = TRUE)
+```
+
+This document gives some examples of how to apply scaling methods (Wordscores, Wordfish, LSS) in **quanteda**. For these examples, we use the (English) speeches of EP group leaders that are part of the [EUSpeech](https://dataverse.harvard.edu/dataverse/euspeech) dataset. The **quanteda**, **quanteda.textmodels**, **quanteda.textstats**, **quanteda.textplots**, **ggplot2** and **tidyverse** packages are familiar at this point. The **quanteda.corpora** package can be downloaded as follows: `devtools::install_github("quanteda/quanteda.corpora")`. The **LSX** package can be downloaded using `install.packages("LSX")`
+
+```{r, echo = TRUE, results = 'verbatim', warning = FALSE, message = FALSE}
+
+#load libraries
+library(quanteda)
+library(quanteda.textmodels)
+library(quanteda.textplots)
+library(quanteda.corpora)
+library(quanteda.textstats)
+library(ggplot2)
+library(tidyverse)
+library(LSX)
+
+#read in the EP speeches
+speeches <- read.csv(file = "speeches_ep.csv", 
+                     header = TRUE, 
+                     stringsAsFactors = FALSE, 
+                     sep = ",", 
+                     encoding = "UTF-8")
+
+#take a look at how many unique speakers there are in the dataset
+unique(speeches$speaker)
+```
+
+Let's first merge the speeches for each speaker using some tidyverse data-wrangling. 
+
+```{r, echo = TRUE, results = 'verbatim', warning = FALSE, message = FALSE}
+
+#the `%>%` command is the pipe function and helps us with a chain of functions
+#think of it as `then`:
+#take the speeches dataframe, then
+#group by speaker, then
+#paste speeches together.
+
+speeches <- speeches %>%
+  group_by(speaker) %>%
+  summarise(text = paste(text, collapse = " ")) %>%
+  ungroup()
+
+#confirm that you have a total of 20 (very long) concatenated speeches, 1 for each EP speaker
+dim(speeches)
+
+```
+Let's first tokenise this corpus.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+#create a corpus object
+corpus_speeches <- corpus(speeches)
+
+#tokenise the corpus
+
+tokens_speeches <- tokens(corpus_speeches,
+                          what = "word",
+                          remove_punct = TRUE, 
+                          remove_symbols = TRUE, 
+                          remove_numbers = TRUE,
+                          remove_url = TRUE,
+                          remove_separators = TRUE,
+                          split_hyphens = FALSE,
+                          ) %>%
+  tokens_remove(stopwords(source = "smart"), padding = TRUE)
+
+```
+
+MEP speeches are full of jargon and references to politicians. Let's append bigram collocations to our tokens object to account for this. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+collocations <- tokens_speeches %>%
+  tokens_sample(size = 10, replace = FALSE) %>%
+  textstat_collocations(min_count = 20,
+                        size = 2:3) %>%
+  arrange(-lambda)
+
+head(collocations, 20)
+
+```
+
+If we want to add the most surprising collocations to our tokens object we can do so using `tokens_compund`:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+collocations <- collocations %>%
+  filter(lambda > 5) %>%
+  pull(collocation) %>%
+  phrase()
+
+tokens_speeches <- tokens_compound(tokens_speeches, collocations)
+
+```
+
+Create a dfm, and change the document names to the speaker names
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+dfm_speeches <- dfm(tokens_speeches)
+docnames(dfm_speeches) <- docvars(dfm_speeches, "speaker")
+```
+
+## Wordscores 
+
+Let's see if we can use Wordscores to locate these speakers on a pro-anti EU dimension. We'll first need to determine reference texts to anchor this dimension. On the anti-EU side we'll locate Francesco Speroni and Nigel Farage, and on the pro-EU dimension we'll locate Guy Verhofstadt, leader of the liberal ALDE group, and a pro-EU voice, as well as Rebecca Harms, the leader of the Greens:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+#append an empty reference_score variable to the speeches_dfm docvars
+docvars(dfm_speeches, "reference_score") <- NA
+
+#locate which rows correspond with Guy Verhofstadt and Rebecca Harms (pro_eu) and Francesco Speroni and Nigel Farage (anti_eu)
+pro_eu <- which(docvars(dfm_speeches) == "Guy Verhofstadt" | docvars(dfm_speeches) == "Rebecca Harms")
+anti_eu <- which(docvars(dfm_speeches) == "Francesco Speroni" |
+                 docvars(dfm_speeches) == "Nigel Farage" )
+
+#assign reference scores to Guy Verhofstadt and Rebecca Harms (1) and Francesco Speroni and Nigel Farage (-1)
+docvars(dfm_speeches, "reference_score")[pro_eu] <- 1
+docvars(dfm_speeches, "reference_score")[anti_eu] <- -1
+
+#inspects the reference.score variable:
+docvars(dfm_speeches, "reference_score")
+
+#implement wordscores as per Laver, Benoit, Garry (2003)
+speeches_ws <- textmodel_wordscores(dfm_speeches, 
+                                    y = docvars(dfm_speeches, "reference_score"), 
+                                    scale = c("linear"), 
+                                    smooth = 1)
+summary(speeches_ws, 10)
+
+#sort most discriminant words:
+
+#anti-EU words
+head(sort(speeches_ws$wordscores), 10)
+
+#pro-EU words
+tail(sort(speeches_ws$wordscores), 10)
+
+#histogram of wordscores
+hist(speeches_ws$wordscore, col = "red", border = 0)
+
+```
+
+Let's use the Wordscores model to predict the document scores of the speeches of the remaining group leaders
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+speeches_wordscores_predict <- predict(speeches_ws,
+                                       newdata = dfm_speeches, 
+                                       se = TRUE)
+
+#which speakers are most like Farage and Speroni
+sort(speeches_wordscores_predict$fit, decreasing = FALSE)[1:5]
+
+#which speakers are most like Verhofstadt and Harms
+sort(speeches_wordscores_predict$fit, decreasing = TRUE)[1:5]
+```
+
+Visualize the document scores in a plot:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+textplot_scale1d(speeches_wordscores_predict)
+```
+
+
+## Wordfish
+
+Estimate a Wordfish model and inspect its output. Using the argument `dir=c(4,8)` set the direction of the dimension so that the document score for Francesco Speroni (speaker 4) is smaller than the document score for Guy Verhofdstadt (speaker 8)
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+speeches_wf <- textmodel_wordfish(dfm_speeches,
+                                  dir = c(4,8))
+summary(speeches_wf)
+
+```
+
+Let's take out the word level parameters beta and psi
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+wordfish_word_data <- data.frame(beta = speeches_wf$beta,
+                            psi = speeches_wf$psi,
+                            features = speeches_wf$features)
+
+dim(wordfish_word_data)
+head(wordfish_word_data)
+
+word_plot <- ggplot(data = wordfish_word_data, aes(x = beta, y = psi)) +
+    geom_point(pch = 21, fill = "gray", color = "white", size = 0.75) +
+  labs(x = "Beta", y = "Psi") + guides(size = "none", color = guide_legend("")) + 
+  theme_minimal() +
+  geom_text(data=subset(wordfish_word_data, beta > 6 | beta < -6 | psi > 4.5),  
+            aes(x = beta, y = psi, label = features))
+
+print(word_plot)
+```
+
+
+Plot the document positions generated by Wordfish: 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+#generate a dataframe with document level alpha beta and omega
+wordfish_document_data <- data.frame(alpha = speeches_wf$alpha,
+                                     theta = speeches_wf$theta,
+                                     se = speeches_wf$se.theta,
+                                     speaker = speeches_wf$docs)
+
+#order the speaker factor by theta
+wordfish_document_data$speaker <- reorder(wordfish_document_data$speaker, 
+                                           wordfish_document_data$theta)
+
+
+#plot wordfish results using ggplot2
+wordfish_plot <- ggplot(wordfish_document_data, 
+                        aes(x= speaker, 
+                            y = theta,
+                            ymin = theta -1.96*se,
+                            ymax = theta + 1.96*se)) +
+  geom_pointrange(pch = 21, fill = "gray", color = "gray", size = 0.75) +
+  theme_minimal() + coord_flip()
+print(wordfish_plot)
+
+```
+
+Both Wordscores and Wordfish are scaling models and if they pick up on the same dimension they should give us similar results. Let's see if this indeed the case. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+scaling_data <- rbind(data.frame(speeches_wordscores_predict, wordfish_document_data))
+
+scaling_plot <- ggplot(scaling_data, aes(x = fit, 
+                                         y = theta, 
+                                         label = speaker)) +
+  geom_point(pch = 21, fill = "gray25", color = "white", size = 2.5) +
+  scale_x_continuous(name = "Wordscore prediction") +
+  scale_y_continuous(name = "Wordfish prediction") +
+  theme_minimal() + geom_text(aes(label=speaker), 
+                                        hjust=0, 
+                                        vjust=0, 
+                                        size = 2)
+  
+print(scaling_plot)
+
+correlation <- cor.test(x=scaling_data$fit, 
+                        y=scaling_data$theta,
+                        method = 'pearson')
+print(correlation)
+```
+
+## Latent semantic scaling (LSS)
+
+In order to apply LSS to the corpus we first need to transform the corpus at the sentence level and create tokenize it
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+corpus_speeches_sent <- corpus_reshape(corpus_speeches, to =  "sentences")
+
+tokens_speeches_sent <- tokens(corpus_speeches_sent,
+                               what = "word",
+                               remove_punct = TRUE, 
+                               remove_symbols = TRUE, 
+                               remove_numbers = TRUE,
+                               remove_url = TRUE,
+                               remove_separators = TRUE,
+                               split_hyphens = FALSE,
+                          ) %>%
+  tokens_remove(stopwords(source = "smart"), padding = FALSE)
+
+dfmat_speeches_sent <- tokens_speeches_sent %>% 
+  dfm()
+
+topfeatures(dfmat_speeches_sent, 20)
+
+```
+
+In this case we rely on the short list of sentiment words as a seed list
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+seed <- as.seedwords(data_dictionary_sentiment)
+print(seed)
+
+```
+
+Using the seed words, LSS computes polarity of words frequent in the context of `member*` (which in this example should denote how positive or negative words are around references of membership)
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+# identify context words 
+member <- char_context(tokens_speeches_sent, pattern = "member", p = 0.05)
+
+# run LSS model
+tmod_lss <- textmodel_lss(dfmat_speeches_sent, seeds = seed,
+                          terms = member, k = 300, cache = TRUE)
+
+```
+
+
+Most positive words that appear in the context of membership
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+head(coef(tmod_lss), 20)
+
+```
+
+
+
+Most negative words that appear in the context of membership
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+tail(coef(tmod_lss), 20)
+```
+
+To obtain document-level scores, we use the `dfm_group()` to re-assemble the sentence-level dfm back at the document-level. We then use `predict()` to make document level LSS predictions. 
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+dfmat_doc <- dfm_group(dfmat_speeches_sent)
+dat <- docvars(dfmat_doc)
+dat$fit <- unlist(predict(tmod_lss, newdata = dfmat_doc, se = TRUE)[1])
+dat$se <- unlist(predict(tmod_lss, newdata = dfmat_doc, se = TRUE)[2])
+
+
+```
+
+We then plot these predictions, ordering speakers from most positive to most negative on membership.  
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+dat$speaker <- with(dat, reorder(speaker, fit))
+
+
+lss_plot <- ggplot(arrange(dat, fit), 
+                        aes(x= speaker, 
+                            y = fit,
+                            ymin = fit -1.96*se,
+                            ymax = fit + 1.96*se)) +
+  geom_pointrange(pch = 21, fill = "gray", color = "gray", size = 0.75) +
+  theme_minimal() + coord_flip()
+print(lss_plot)
+
+```
+
+## Exercises
+
+For this set of exercises we will use `data_corpus_irishbudget2010` a corpus that consists of 2010 budget speeches in Ireland. The dataset is included in the quanteda package.
+
+1. Tokenize `data_corpus_irishbudget2010`, remove stopwords, punctuation characters, and create a dfm called `dfm_budget_debates`
+
+```{r}
+dfm_budget_debates <- data_corpus_irishbudget2010 %>%
+  tokens(remove_punct = TRUE) %>% 
+  tokens_remove(pattern = stopwords("en")) %>% 
+  dfm()
+
+```
+
+2. Create a binary variable `ref_score` that equals 1 if the speaker's name is "Lenihan" (i.e., the Minister of Finance at the time) and -1 if the speaker's name is "Kenny" (Enda Kenny was leader of the opposition at the time). For all other speakers, assign the value NA. 
+
+```{r}
+
+ref_score <- rep(NA, nrow(dfm_budget_debates))
+
+government <- which(docvars(dfm_budget_debates, "name") == "Lenihan")
+opposition <- which(docvars(dfm_budget_debates, "name") == "Kenny")
+
+ref_score[government] = 1
+ref_score[opposition] = -1
+
+```
+
+3. Apply a Wordscores model for this document-feature matrix using `ref_score` as the value for `y`. 
+
+```{r}
+budget_debates_ws <- textmodel_wordscores(dfm_budget_debates, 
+                                          y = ref_score)
+```
+
+4. Explore the scores for all words in the dfm using `textplot_scale1d()`. Note: set margin to "features". Why are some terms clustered around -1 and +1?
+
+```{r}
+textplot_scale1d(budget_debates_ws, margin = "features")
+```
+
+5. Use `predict()` for predicting the document-level word scores for all documents in the dfm. Set `se = TRUE` to add 95% confidence intervals.
+
+```{r}
+pred_ws <- predict(budget_debates_ws, 
+                   newdata = dfm_budget_debates, 
+                   se = TRUE)
+```
+
+
+6. Apply `textplot_scale1d()` to the object created in question 5. Does this method distinguish between government (FF and Green) and oppoisiton parties?
+
+```{r}
+textplot_scale1d(pred_ws)
+```
+
+Use the `dfm_budget_debates`. Create a new dfm object that only keeps terms that appear in at least three documents and that appear at least three times. Call the resulting dfm `dfm_budget_debates_trimmed`
+
+```{r}
+dfm_budget_debates_trimmed <- dfm_budget_debates %>% 
+  dfm_trim(min_termfreq = 3, min_docfreq = 3)
+```
+
+Run a Wordfish model on this dfm.
+
+```{r}
+tmod_wf <- textmodel_wordfish(dfm_budget_debates_trimmed)
+```
+
+Use `textplot_scale1d()` to plot (1) document-positions, and scores for each word. You can achieve this by adjusting the `margin` argument.
+
+```{r}
+textplot_scale1d(tmod_wf, margin = "documents")
+```
+
+```{r}
+textplot_scale1d(tmod_wf, margin = "features")
+```
+
+
