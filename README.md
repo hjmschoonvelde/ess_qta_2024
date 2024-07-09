@@ -26,7 +26,7 @@ To facilitate communication and interaction throughout the course we will make u
 | Date        | Link           | Solutions           |    
 | ------------- |:-------------:|:-------------:|
 | July  9   |  [.md]( Lab_sessions/Day_1/Lab_Session_QTA_1.md ) [.Rmd]( Lab_sessions/Day_1/Lab_Session_QTA_1.Rmd )  | [.md]( Lab_sessions/Day_1/Lab_Session_QTA_1_Answers.md ) [.Rmd]( Lab_sessions/Day_1/Lab_Session_QTA_1_Answers.Rmd ) |
-| July  10   | [.md]( Lab_sessions/Day_1/Lab_Session_QTA_2.md ) [.Rmd]( Lab_sessions/Day_1/Lab_Session_QTA_2.Rmd )  | [.md]( Lab_sessions/Day_1/Lab_Session_QTA_1_Answers.md ) [.Rmd]( Lab_sessions/Day_1/Lab_Session_QTA_1_Answers.Rmd ) |
+| July  10   | [.md]( Lab_sessions/Day_2/Lab_Session_QTA_2.md ) [.Rmd]( Lab_sessions/Day_2/Lab_Session_QTA_2.Rmd )  | [.md]( Lab_sessions/Day_2/Lab_Session_QTA_1_Answers.md ) [.Rmd]( Lab_sessions/Day_2/Lab_Session_QTA_1_Answers.Rmd ) |
 | July  11   | [.md]() [.Rmd]() | [.md]() [.Rmd]() |
 | July  12   | [.md]() [.Rmd]() | [.md]() [.Rmd]() |
 | July  15   | [.md]() [.Rmd]() | [.md]() [.Rmd]() |
