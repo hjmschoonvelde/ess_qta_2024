@@ -2,10 +2,10 @@
 title: "QTA Lab Session 1 -- Introduction to R. Text as an object in R"
 output:
   #github_document:
-  html_document:
-    theme: readable
-  #  md_document:
-  #    variant: markdown_github
+  #html_document:
+  #  theme: readable
+    md_document:
+      variant: markdown_github
       
 #date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---
@@ -149,6 +149,19 @@ So far you have used some functions that are built-in to `R` (base R). However, 
 Today we will use 3 packages: `quanteda`, `ggplot2` and `stringr`. These packages will allow us to do various cool things in `R`
 
 For example `quanteda` is a library that contains functions related to quantitative text analysis. In order to use the functions in these libraries, you will need to 1) install them, using the `install.packages()` function, and 2) load them using the `library()` function.  
+
+Let's install them first (you only need to do this once, after that you can load the library using the `library()` function. In order to use the `install.packages()` function, you need to remove the `#` symbol in front of the function. 
+
+
+```{r, out.width='\\textwidth', message=FALSE, warning=FALSE}
+
+#install.packages(quanteda)
+#install.packages(stringr)
+#install.packages(ggplot2)
+
+```
+
+
 
 ```{r, out.width='\\textwidth', message=FALSE, warning=FALSE}
 

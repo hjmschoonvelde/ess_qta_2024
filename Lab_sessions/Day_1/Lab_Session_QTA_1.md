@@ -213,6 +213,17 @@ libraries, you will need to 1) install them, using the
 `install.packages()` function, and 2) load them using the `library()`
 function.
 
+Let’s install them first (you only need to do this once, after that you
+can load the library using the `library()` function. In order to use the
+`install.packages()` function, you need to remove the `#` symbol in
+front of the function.
+
+``` r
+#install.packages(quanteda)
+#install.packages(stringr)
+#install.packages(ggplot2)
+```
+
 ``` r
 library(quanteda)
 library(stringr)
@@ -422,7 +433,7 @@ plot <- ggplot(data = data,
 print(plot)
 ```
 
-<img src="Lab_Session_QTA_1_files/figure-markdown_github/unnamed-chunk-25-1.png" width="\textwidth" />
+<img src="Lab_Session_QTA_1_files/figure-markdown_github/unnamed-chunk-26-1.png" width="\textwidth" />
 
 Let’s make this plot a bit nicer by adding a theme
 
@@ -434,7 +445,7 @@ plot <- ggplot(data = data, aes(x = name_commissioner,
 print(plot)
 ```
 
-<img src="Lab_Session_QTA_1_files/figure-markdown_github/unnamed-chunk-26-1.png" width="\textwidth" />
+<img src="Lab_Session_QTA_1_files/figure-markdown_github/unnamed-chunk-27-1.png" width="\textwidth" />
 
 We’ll make this plot even nicer by rotating the x-axis labels.
 
@@ -448,7 +459,7 @@ plot <- ggplot(data = data, aes(x = name_commissioner,
 print(plot)
 ```
 
-<img src="Lab_Session_QTA_1_files/figure-markdown_github/unnamed-chunk-27-1.png" width="\textwidth" />
+<img src="Lab_Session_QTA_1_files/figure-markdown_github/unnamed-chunk-28-1.png" width="\textwidth" />
 Now we will order the commissioners by age. We can do this by using the
 `reorder()` function.
 
@@ -462,7 +473,7 @@ plot <- ggplot(data = data, aes(x = reorder(name_commissioner, age_commissioner)
 print(plot)
 ```
 
-<img src="Lab_Session_QTA_1_files/figure-markdown_github/unnamed-chunk-28-1.png" width="\textwidth" />
+<img src="Lab_Session_QTA_1_files/figure-markdown_github/unnamed-chunk-29-1.png" width="\textwidth" />
 
 **Question** How would you make this plot nicer? What aspects would you
 change?
