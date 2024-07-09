@@ -2,10 +2,10 @@
 title: "QTA Lab Session 1 -- Introduction to R. Text as an object in R"
 output:
   #github_document:
-  #html_document:
-  #  theme: readable
-    md_document:
-      variant: markdown_github
+  html_document:
+  theme: readable
+   # md_document:
+  #   variant: markdown_github
       
 #date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---
@@ -34,6 +34,10 @@ R can serve many different purposes. For instance, we can use R as a calculator.
 3**2 
 #subtraction
 4-5
+
+3+2
+3-2
+
 
 
 ```
@@ -88,6 +92,9 @@ We can also create an object called Beatles with the first names of the Beatles 
 
 beatles <- c("John", "Paul", "George", "Ringo")
 
+newspaper_articles <- c("text article 1", "text article 2", "text article 3", "text article 4")
+
+
 ```
 What happens if we take the mean of the beatles object?
 
@@ -102,6 +109,8 @@ The output is `NA`, which is `R` speak for a missing value, which makes sense, b
 
 ```{r, out.width='\\textwidth', message=FALSE, warning=FALSE}
 
+y <- c(4,5,6,7)
+x+y
 #your answer here
 ```
 
@@ -111,7 +120,7 @@ Now let's try to take the square root of x using the `squareroot()` function.
 
 ```{r, out.width='\\textwidth', message=FALSE, warning=FALSE}
 
-#squareroot(x)
+squareroot(x)
 
 ```
 
@@ -220,6 +229,9 @@ When data is of type character, we can use the `stringr()` library for some usef
 ```{r, out.width='\\textwidth'}
 
 str_to_upper(commissioners)
+
+str_to_lower(commissioners)
+
 
 ```
 
