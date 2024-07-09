@@ -7,13 +7,13 @@ a string before you start analyzing your text.
 These string operations require familiarity with regular expressions in
 `R` as well as with functions in the **stringr** library.[^1]
 
-Libraries like **quanteda** include some string cleaning functions as
+Packages such as **quanteda** include some string cleaning functions as
 well but knowledge of regular expressions and string operations allow
-you to deal with the particulars of your text. That being said, these
-operations usually involve lots of trial and error as well as using
-Google to figure out how to do certain things. But they help you clean
-your data, which will save you lot of headaches later on. Let’s take a
-look at a set of useful functions.
+you to deal much better with with the specifics of your text. That said,
+these operations usually involve lots of trial and error, Google, or
+conversations with ChatGPT to figure out how to do certain things. But
+they help you clean your data, which will save you lot of headaches
+later on. Let’s have a look at a set of useful functions.
 
 First load the `stringr` library in `R`.
 
@@ -24,81 +24,142 @@ library(stringr)
 Then create a string vector called shopping_list:
 
 ``` r
-shopping_list <- c("apples x45!", "loaf of bread", "Bag of sugar", "milk x2 or x3")
+shopping_list <- c("4 bananas", " 136 Apples", "20 oranges", "1 Milk", "2 eggs")
 ```
 
 Vectors are basic objects in `R` which contain a set of values of the
 same type (character, numeric, factor, etc.) The shopping_list contains
-four character strings Check that this is true with the `str()`
-function:
+five character. Check that this is true with the `str()` function:
 
 ``` r
 str(shopping_list)
 ```
 
-    ##  chr [1:4] "apples x45!" "loaf of bread" "Bag of sugar" "milk x2 or x3"
+    ##  chr [1:5] "4 bananas" " 136 Apples" "20 oranges" "1 Milk" "2 eggs"
 
 The `stringr` library contains many useful functions for working with
 character values, which are listed in this [cheat
 sheet](https://github.com/rstudio/cheatsheets/blob/master/strings.pdf).
-Let’s go through a few examples, starting with the `str_extract ()`
-function, which takes in two arguments: a string and a pattern to look
+Let’s go through a few examples, starting with the `str_extract()`
+function for basic pattern matching.
+
+`str_extract()` takes in two arguments: a string and a pattern to look
 for. For each string it returns the pattern it found. Let’s see if it
-finds a B in each of the strings:
+finds a n in each of the strings:
 
 ``` r
-str_extract(shopping_list, "B")
+str_extract(shopping_list, "n")
 ```
 
-    ## [1] NA  NA  "B" NA
+    ## [1] "n" NA  "n" NA  NA
 
-Functions in the `stringr` library can work with regular expressions.
-For example, execute the following line of code:
+We can use `str_which()` to find the indexes of strings that contain a
+pattern match:
+
+``` r
+str_which(shopping_list, "n")
+```
+
+    ## [1] 1 3
+
+Using `str_locate()` we can find the position of the first match in each
+string:
+
+``` r
+str_locate(shopping_list, "n")
+```
+
+    ##      start end
+    ## [1,]     5   5
+    ## [2,]    NA  NA
+    ## [3,]     7   7
+    ## [4,]    NA  NA
+    ## [5,]    NA  NA
+
+Using `str_locate_all()` we can find the position of all matches in each
+string:
+
+``` r
+str_locate_all(shopping_list, "n")
+```
+
+    ## [[1]]
+    ##      start end
+    ## [1,]     5   5
+    ## [2,]     7   7
+    ## 
+    ## [[2]]
+    ##      start end
+    ## 
+    ## [[3]]
+    ##      start end
+    ## [1,]     7   7
+    ## 
+    ## [[4]]
+    ##      start end
+    ## 
+    ## [[5]]
+    ##      start end
+
+Functions in the `stringr` library can work with regular expressions to
+extract content from a string vector in a more systematic way. For
+example, run the following line of code:
 
 ``` r
 str_extract(shopping_list, "\\d")
 ```
 
-    ## [1] "4" NA  NA  "2"
+    ## [1] "4" "1" "2" "1" "2"
 
 Here `d` is a regular expression which refers to any number (**NB**:
-without the escape character `\\` it would just refer to the letter d) .
-See happens when you replace `d` with `d+` like so:
+without the escape character `\\` it would just refer to the letter d).
+See what happens when you replace `d` with `d+` like so:
 `str_extract(shopping_list, "\\d+")`. What does the + do?
+
+``` r
+str_extract(shopping_list, "\\d+")
+```
+
+    ## [1] "4"   "136" "20"  "1"   "2"
 
 ``` r
 #your answer here
 ```
 
-Let’s turn to alphabetic characters (aka letters)
+Let’s turn to alphabetic characters (aka letters). The regular
+expression `[a-z]` refers to any lower case letter. The `+` symbol after
+`[a-z]` refers to one or more lower case letters. The `{3,4}` refers to
+a range of 3 to 4 lower case letters. The regular expression `[A-z]`
+refers to any upper or lower case letter. The `\\b` refers to a word
+boundary. Let’s see how these work in practice:
 
 ``` r
-#extract first lower case character in a string
+#extract the first lower case charachter in each string
 str_extract(shopping_list, "[a-z]")
 ```
 
-    ## [1] "a" "l" "a" "m"
+    ## [1] "b" "p" "o" "i" "e"
 
 ``` r
 #extract lower case characters one or more times (again note the "+" symbol after "[a-z]")
 str_extract(shopping_list, "[a-z]+")
 ```
 
-    ## [1] "apples" "loaf"   "ag"     "milk"
+    ## [1] "bananas" "pples"   "oranges" "ilk"     "eggs"
 
 ``` r
 #extract up to four lower case letters occurring in a row
-str_extract(shopping_list, "[a-z]{1,4}")
+str_extract(shopping_list, "[a-z]{3,4}")
 ```
 
-    ## [1] "appl" "loaf" "ag"   "milk"
+    ## [1] "bana" "pple" "oran" "ilk"  "eggs"
 
 ``` r
 #extract up to four upper OR lower case letters
 str_extract(shopping_list, "[A-z]{1,4}")
 ```
 
-    ## [1] "appl" "loaf" "Bag"  "milk"
+    ## [1] "bana" "Appl" "oran" "Milk" "eggs"
 
 ``` r
 #extract all letters in each string
@@ -106,98 +167,104 @@ str_extract_all(shopping_list, "[A-z]+")
 ```
 
     ## [[1]]
-    ## [1] "apples" "x"     
+    ## [1] "bananas"
     ## 
     ## [[2]]
-    ## [1] "loaf"  "of"    "bread"
+    ## [1] "Apples"
     ## 
     ## [[3]]
-    ## [1] "Bag"   "of"    "sugar"
+    ## [1] "oranges"
     ## 
     ## [[4]]
-    ## [1] "milk" "x"    "or"   "x"
+    ## [1] "Milk"
+    ## 
+    ## [[5]]
+    ## [1] "eggs"
 
 ``` r
-str_extract_all(shopping_list, "\\d")
+#extract all numbers in each string
+str_extract_all(shopping_list, "\\d+")
 ```
 
     ## [[1]]
-    ## [1] "4" "5"
+    ## [1] "4"
     ## 
     ## [[2]]
-    ## character(0)
+    ## [1] "136"
     ## 
     ## [[3]]
-    ## character(0)
+    ## [1] "20"
     ## 
     ## [[4]]
-    ## [1] "2" "3"
+    ## [1] "1"
+    ## 
+    ## [[5]]
+    ## [1] "2"
+
+Note that str_extract_all generates a list of character strings as
+output. This can be simplified into a character matrix using the
+simplify command:
 
 ``` r
-#note that str_extract_all generates a list of character strings as output. 
-#this can be simplified into a character matrix using the simplify command
-
 str_extract_all(shopping_list, "\\b[A-z]+\\b", 
                 simplify = TRUE)
 ```
 
-    ##      [,1]     [,2] [,3]   
-    ## [1,] "apples" ""   ""     
-    ## [2,] "loaf"   "of" "bread"
-    ## [3,] "Bag"    "of" "sugar"
-    ## [4,] "milk"   "or" ""
+    ##      [,1]     
+    ## [1,] "bananas"
+    ## [2,] "Apples" 
+    ## [3,] "oranges"
+    ## [4,] "Milk"   
+    ## [5,] "eggs"
 
 ``` r
 str_extract_all(shopping_list, "\\d", 
                 simplify = TRUE)
 ```
 
-    ##      [,1] [,2]
-    ## [1,] "4"  "5" 
-    ## [2,] ""   ""  
-    ## [3,] ""   ""  
-    ## [4,] "2"  "3"
+    ##      [,1] [,2] [,3]
+    ## [1,] "4"  ""   ""  
+    ## [2,] "1"  "3"  "6" 
+    ## [3,] "2"  "0"  ""  
+    ## [4,] "1"  ""   ""  
+    ## [5,] "2"  ""   ""
 
-Let’s have a look at the `str_replace()` function. This function takes
-in three arguments: *string, pattern and replacement*. The string is the
-string it is inspecting; the pattern is what the function is looking
-for; and the replacement denotes what it replaces the pattern with.
+Let’s have a look at the `str_replace()` function, which replaces a
+pattern in a string with another pattern. This function takes in three
+arguments: *string, pattern and replacement*. The string is the text you
+want to modify, the pattern is the text you want to replace, and the
+replacement is the text you want to replace it with.
+
+Let’s replace the first vowel in each string with a dash. And then
+replace all vowels with a dash:
 
 ``` r
-#replace first match
+#replace first vowel
 str_replace(shopping_list, "[aeiou]", "-")
 ```
 
-    ## [1] "-pples x45!"   "l-af of bread" "B-g of sugar"  "m-lk x2 or x3"
+    ## [1] "4 b-nanas"   " 136 Appl-s" "20 -ranges"  "1 M-lk"      "2 -ggs"
 
 ``` r
-#replace all matches
+#replace all vowels
 str_replace_all(shopping_list, "[aeiou]", "-")
 ```
 
-    ## [1] "-ppl-s x45!"   "l--f -f br--d" "B-g -f s-g-r"  "m-lk x2 -r x3"
-
-The following table contains a set of useful functions in the `stringr`
-package that help you perform string operations in *R*.
-
-<figure>
-<img src="stringr.png" style="width:65.0%"
-alt="Stringr functions, taken from Chapter 8 of Automated Data Collection With R, by Munzert et al (2015)." />
-<figcaption aria-hidden="true">Stringr functions, taken from Chapter 8
-of Automated Data Collection With R, by Munzert <em>et al</em>
-(2015).</figcaption>
-</figure>
+    ## [1] "4 b-n-n-s"   " 136 Appl-s" "20 -r-ng-s"  "1 M-lk"      "2 -ggs"
 
 In *R*, you write regular expressions as strings, sequences of
 characters surrounded by quotes (““) or single quotes (’’). Characters
-like +, ?, ^, and . have a special meaning in regular expressions and
+like +, ?, ^, and . have a special meaning as regular expressions and
 cannot be represented directly in an R string (see the RegEx [cheat
 sheet](https://github.com/rstudio/cheatsheets/blob/master/strings.pdf)
 for more examples). In order to match them literally, they need to be
 preceded by two backslashes: \`\`\\”.
 
+Let’s start with an example of a vector of names that for some reason
+contain dots and plus signs.
+
 ``` r
-name_list <- c("Jo.hn", "Anna.", "Si.+si")
+name_list <- c("Jo.hn", "Anna.", "Si.+si", "Ma.ria")
 ```
 
 Compare the output of these two calls
@@ -206,32 +273,34 @@ Compare the output of these two calls
 str_replace(name_list, ".", "-")
 ```
 
-    ## [1] "-o.hn"  "-nna."  "-i.+si"
+    ## [1] "-o.hn"  "-nna."  "-i.+si" "-a.ria"
 
 ``` r
 str_replace(name_list, "\\.", "-")
 ```
 
-    ## [1] "Jo-hn"  "Anna-"  "Si-+si"
+    ## [1] "Jo-hn"  "Anna-"  "Si-+si" "Ma-ria"
 
-Ccompare the output of these two calls
+Ccompare the output of these two calls:
 
 ``` r
 str_replace(name_list, ".+", "-")
 ```
 
-    ## [1] "-" "-" "-"
+    ## [1] "-" "-" "-" "-"
 
 ``` r
 str_replace(name_list, "\\.\\+", "-")
 ```
 
-    ## [1] "Jo.hn" "Anna." "Si-si"
+    ## [1] "Jo.hn"  "Anna."  "Si-si"  "Ma.ria"
 
 ## Inspecting a corpus
 
 For the next part of this script we’ll first need to load the
-**quanteda** library:
+**quanteda** package. **quanteda** is a package for the quantitative
+analysis of textual data. It is a powerful package that allows you to
+preprocess, analyze, and visualize text data.
 
 ``` r
 library(quanteda)
@@ -248,17 +317,28 @@ summary(data_corpus_inaugural,  n = 10)
 
     ## Corpus consisting of 59 documents, showing 10 documents:
     ## 
-    ##             Text Types Tokens Sentences Year  President   FirstName                 Party
-    ##  1789-Washington   625   1537        23 1789 Washington      George                  none
-    ##  1793-Washington    96    147         4 1793 Washington      George                  none
-    ##       1797-Adams   826   2577        37 1797      Adams        John            Federalist
-    ##   1801-Jefferson   717   1923        41 1801  Jefferson      Thomas Democratic-Republican
-    ##   1805-Jefferson   804   2380        45 1805  Jefferson      Thomas Democratic-Republican
-    ##     1809-Madison   535   1261        21 1809    Madison       James Democratic-Republican
-    ##     1813-Madison   541   1302        33 1813    Madison       James Democratic-Republican
-    ##      1817-Monroe  1040   3677       121 1817     Monroe       James Democratic-Republican
-    ##      1821-Monroe  1259   4886       131 1821     Monroe       James Democratic-Republican
-    ##       1825-Adams  1003   3147        74 1825      Adams John Quincy Democratic-Republican
+    ##             Text Types Tokens Sentences Year  President   FirstName
+    ##  1789-Washington   625   1537        23 1789 Washington      George
+    ##  1793-Washington    96    147         4 1793 Washington      George
+    ##       1797-Adams   826   2577        37 1797      Adams        John
+    ##   1801-Jefferson   717   1923        41 1801  Jefferson      Thomas
+    ##   1805-Jefferson   804   2380        45 1805  Jefferson      Thomas
+    ##     1809-Madison   535   1261        21 1809    Madison       James
+    ##     1813-Madison   541   1302        33 1813    Madison       James
+    ##      1817-Monroe  1040   3677       121 1817     Monroe       James
+    ##      1821-Monroe  1259   4886       131 1821     Monroe       James
+    ##       1825-Adams  1003   3147        74 1825      Adams John Quincy
+    ##                  Party
+    ##                   none
+    ##                   none
+    ##             Federalist
+    ##  Democratic-Republican
+    ##  Democratic-Republican
+    ##  Democratic-Republican
+    ##  Democratic-Republican
+    ##  Democratic-Republican
+    ##  Democratic-Republican
+    ##  Democratic-Republican
 
 Let’s make a copy of this corpus. We’ll save it in our working
 environment as an object called `speeches_inaugural`
@@ -277,6 +357,7 @@ as.character(speeches_inaugural)[1]
     ##                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             1789-Washington 
     ## "Fellow-Citizens of the Senate and of the House of Representatives:\n\nAmong the vicissitudes incident to life no event could have filled me with greater anxieties than that of which the notification was transmitted by your order, and received on the 14th day of the present month. On the one hand, I was summoned by my Country, whose voice I can never hear but with veneration and love, from a retreat which I had chosen with the fondest predilection, and, in my flattering hopes, with an immutable decision, as the asylum of my declining years  -  a retreat which was rendered every day more necessary as well as more dear to me by the addition of habit to inclination, and of frequent interruptions in my health to the gradual waste committed on it by time. On the other hand, the magnitude and difficulty of the trust to which the voice of my country called me, being sufficient to awaken in the wisest and most experienced of her citizens a distrustful scrutiny into his qualifications, could not but overwhelm with despondence one who (inheriting inferior endowments from nature and unpracticed in the duties of civil administration) ought to be peculiarly conscious of his own deficiencies. In this conflict of emotions all I dare aver is that it has been my faithful study to collect my duty from a just appreciation of every circumstance by which it might be affected. All I dare hope is that if, in executing this task, I have been too much swayed by a grateful remembrance of former instances, or by an affectionate sensibility to this transcendent proof of the confidence of my fellow citizens, and have thence too little consulted my incapacity as well as disinclination for the weighty and untried cares before me, my error will be palliated by the motives which mislead me, and its consequences be judged by my country with some share of the partiality in which they originated.\n\nSuch being the impressions under which I have, in obedience to the public summons, repaired to the present station, it would be peculiarly improper to omit in this first official act my fervent supplications to that Almighty Being who rules over the universe, who presides in the councils of nations, and whose providential aids can supply every human defect, that His benediction may consecrate to the liberties and happiness of the people of the United States a Government instituted by themselves for these essential purposes, and may enable every instrument employed in its administration to execute with success the functions allotted to his charge. In tendering this homage to the Great Author of every public and private good, I assure myself that it expresses your sentiments not less than my own, nor those of my fellow citizens at large less than either. No people can be bound to acknowledge and adore the Invisible Hand which conducts the affairs of men more than those of the United States. Every step by which they have advanced to the character of an independent nation seems to have been distinguished by some token of providential agency; and in the important revolution just accomplished in the system of their united government the tranquil deliberations and voluntary consent of so many distinct communities from which the event has resulted can not be compared with the means by which most governments have been established without some return of pious gratitude, along with an humble anticipation of the future blessings which the past seem to presage. These reflections, arising out of the present crisis, have forced themselves too strongly on my mind to be suppressed. You will join with me, I trust, in thinking that there are none under the influence of which the proceedings of a new and free government can more auspiciously commence.\n\nBy the article establishing the executive department it is made the duty of the President \"to recommend to your consideration such measures as he shall judge necessary and expedient.\" The circumstances under which I now meet you will acquit me from entering into that subject further than to refer to the great constitutional charter under which you are assembled, and which, in defining your powers, designates the objects to which your attention is to be given. It will be more consistent with those circumstances, and far more congenial with the feelings which actuate me, to substitute, in place of a recommendation of particular measures, the tribute that is due to the talents, the rectitude, and the patriotism which adorn the characters selected to devise and adopt them. In these honorable qualifications I behold the surest pledges that as on one side no local prejudices or attachments, no separate views nor party animosities, will misdirect the comprehensive and equal eye which ought to watch over this great assemblage of communities and interests, so, on another, that the foundation of our national policy will be laid in the pure and immutable principles of private morality, and the preeminence of free government be exemplified by all the attributes which can win the affections of its citizens and command the respect of the world. I dwell on this prospect with every satisfaction which an ardent love for my country can inspire, since there is no truth more thoroughly established than that there exists in the economy and course of nature an indissoluble union between virtue and happiness; between duty and advantage; between the genuine maxims of an honest and magnanimous policy and the solid rewards of public prosperity and felicity; since we ought to be no less persuaded that the propitious smiles of Heaven can never be expected on a nation that disregards the eternal rules of order and right which Heaven itself has ordained; and since the preservation of the sacred fire of liberty and the destiny of the republican model of government are justly considered, perhaps, as deeply, as finally, staked on the experiment entrusted to the hands of the American people.\n\nBesides the ordinary objects submitted to your care, it will remain with your judgment to decide how far an exercise of the occasional power delegated by the fifth article of the Constitution is rendered expedient at the present juncture by the nature of objections which have been urged against the system, or by the degree of inquietude which has given birth to them. Instead of undertaking particular recommendations on this subject, in which I could be guided by no lights derived from official opportunities, I shall again give way to my entire confidence in your discernment and pursuit of the public good; for I assure myself that whilst you carefully avoid every alteration which might endanger the benefits of an united and effective government, or which ought to await the future lessons of experience, a reverence for the characteristic rights of freemen and a regard for the public harmony will sufficiently influence your deliberations on the question how far the former can be impregnably fortified or the latter be safely and advantageously promoted.\n\nTo the foregoing observations I have one to add, which will be most properly addressed to the House of Representatives. It concerns myself, and will therefore be as brief as possible. When I was first honored with a call into the service of my country, then on the eve of an arduous struggle for its liberties, the light in which I contemplated my duty required that I should renounce every pecuniary compensation. From this resolution I have in no instance departed; and being still under the impressions which produced it, I must decline as inapplicable to myself any share in the personal emoluments which may be indispensably included in a permanent provision for the executive department, and must accordingly pray that the pecuniary estimates for the station in which I am placed may during my continuance in it be limited to such actual expenditures as the public good may be thought to require.\n\nHaving thus imparted to you my sentiments as they have been awakened by the occasion which brings us together, I shall take my present leave; but not without resorting once more to the benign Parent of the Human Race in humble supplication that, since He has been pleased to favor the American people with opportunities for deliberating in perfect tranquillity, and dispositions for deciding with unparalleled unanimity on a form of government for the security of their union and the advancement of their happiness, so His divine blessing may be equally conspicuous in the enlarged views, the temperate consultations, and the wise measures on which the success of this Government must depend. "
 
+This produces the text of George Washington’s first inaugural speech.
 Metadata such as year, speaker, etc. are stored in a corpus object as
 *docvars*, and can be accessed like so:
 
@@ -285,18 +366,24 @@ Metadata such as year, speaker, etc. are stored in a corpus object as
 docvars(speeches_inaugural, "Year")
 ```
 
-    ##  [1] 1789 1793 1797 1801 1805 1809 1813 1817 1821 1825 1829 1833 1837 1841 1845 1849 1853 1857 1861 1865 1869 1873 1877 1881 1885 1889 1893 1897 1901
-    ## [30] 1905 1909 1913 1917 1921 1925 1929 1933 1937 1941 1945 1949 1953 1957 1961 1965 1969 1973 1977 1981 1985 1989 1993 1997 2001 2005 2009 2013 2017
-    ## [59] 2021
+    ##  [1] 1789 1793 1797 1801 1805 1809 1813 1817 1821 1825 1829 1833 1837 1841 1845
+    ## [16] 1849 1853 1857 1861 1865 1869 1873 1877 1881 1885 1889 1893 1897 1901 1905
+    ## [31] 1909 1913 1917 1921 1925 1929 1933 1937 1941 1945 1949 1953 1957 1961 1965
+    ## [46] 1969 1973 1977 1981 1985 1989 1993 1997 2001 2005 2009 2013 2017 2021
 
 ``` r
 #party
 head(docvars(speeches_inaugural, "Party"), 10)
 ```
 
-    ##  [1] none                  none                  Federalist            Democratic-Republican Democratic-Republican Democratic-Republican
-    ##  [7] Democratic-Republican Democratic-Republican Democratic-Republican Democratic-Republican
+    ##  [1] none                  none                  Federalist           
+    ##  [4] Democratic-Republican Democratic-Republican Democratic-Republican
+    ##  [7] Democratic-Republican Democratic-Republican Democratic-Republican
+    ## [10] Democratic-Republican
     ## Levels: Democratic Democratic-Republican Federalist none Republican Whig
+
+Using the `table()` function we can inspect the number of presidents of
+each party:
 
 ``` r
 #number of presidents of each party
@@ -304,14 +391,30 @@ table(docvars(speeches_inaugural, "Party"))
 ```
 
     ## 
-    ##            Democratic Democratic-Republican            Federalist                  none            Republican                  Whig 
-    ##                    22                     7                     1                     2                    24                     3
+    ##            Democratic Democratic-Republican            Federalist 
+    ##                    22                     7                     1 
+    ##                  none            Republican                  Whig 
+    ##                     2                    24                     3
+
+We can also inspect the number of documents in the corpus using the
+`ndoc()` function:
+
+``` r
+ndoc(speeches_inaugural)
+```
+
+    ## [1] 59
 
 Subsetting a corpus is easy using the `corpus_subset()` function. Note
-the `==` operator here. In `R` `=` denotes an assignment operator,
-whereas `==` denotes equal to. We can for example create an object that
-only contains the inaugural speech of Donald Trump and call it
-`trump_inaugural`
+the `==` operator here. In `R` `=` is primarily used for assignment
+within function calls. It assigns values to variables. It can also be
+used for variable assignment, but this usage is less common compared to
+the `<-` operator, which is the preferred assignment operator in R. The
+`==` operator in `R` is used for comparison. It checks if two values are
+equal and returns a logical value (TRUE or FALSE).
+
+Using the `==` operator, we can create an object that only contains the
+inaugural speech of Donald Trump and call it `trump_inaugural`
 
 ``` r
 trump_inaugural <- corpus_subset(speeches_inaugural, President == "Trump")
@@ -322,7 +425,9 @@ ndoc(trump_inaugural)
     ## [1] 1
 
 As you can see, Trump only appears only one time in the corpus. That’s
-because he got voted out of office in 2020.
+because he got voted out of office in 2020, although it remains to be
+seen what happens in 2024. Let’s inspect the content of his inaugural
+speech:
 
 ``` r
 as.character(trump_inaugural)
@@ -333,8 +438,9 @@ as.character(trump_inaugural)
 
 If the documents are clean enough (i.e., with correct interpunction
 etc.), then it is easy in **quanteda** to break down a document on a
-sentence to sentence basis using `corpus_reshape()`, which creates a new
-corpus with each sentence a \`document’
+sentence to sentence basis using `corpus_reshape()`, which reshapes the
+corpus to a different level of granularity, in this case to the level of
+sentences.
 
 ``` r
 trump_sentence <- corpus_reshape(trump_inaugural, to =  "sentences")
@@ -347,31 +453,43 @@ ndoc(trump_sentence)
 As you can see, Trump’s inaugural speech consisted of 88 sentences.
 
 Before we preprocess our texts, we first need to tokenize it using
-`tokens()`.
+`tokens()`. Tokenization is the process of breaking a text into smaller
+units, such as words.
 
 ``` r
 tokens_speeches_inaugural <- tokens(speeches_inaugural)
 ```
 
-We can create multiword expressions using `tokens_compound()`. Let’s say
-we want to make certain that references to the United States are
-recognized as such in subsequent analyses. We can do so using the
+Using `tokens_compound()` we can create multiword expressions. Multiword
+expressions are phrases that consist of more than one word. Let’s say we
+want to make certain that references to the `United States of America`
+are recognized as such in subsequent analyses. We can do so using the
 following line of code:
 
 ``` r
 tokens_speeches_inaugural <- tokens_compound(tokens_speeches_inaugural, phrase("United States of America"))
 ```
 
-Let’s see how often each President referred to the United States
+Let’s see how often each President referred to the United States of
+America in their inaugural speeches:
 
 ``` r
 str_count(as.character(speeches_inaugural), "United States of America")
 ```
 
-    ##  [1] 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 1 1 2 1
+    ##  [1] 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+    ## [39] 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 1 1 1 2 1
+
+Apparently, this is a turn of phrase that is used more often in recent
+years, but not so much in the past.
 
 Using the `kwic()` function, we can inspect the context in which the
-United States is used in these speeches:
+United States of America is used in these speeches. The `kwic()`
+function takes in a tokenized text and a pattern to look for. It returns
+a keyword-in-context (KWIC) object, which is a data frame that shows the
+context in which the pattern occurs. In this case we’ll look at the
+context in which the United States of America of 10 words before and
+after the phrase:
 
 ``` r
 kwic(tokens_speeches_inaugural, 
@@ -380,13 +498,20 @@ kwic(tokens_speeches_inaugural,
   tail()
 ```
 
-    ## Keyword-in-context with 6 matches.                                                                                                                                               
-    ##   [2005-Bush, 2308]          God bless you, and may He watch over the | United_States_of_America | .                                           
-    ##  [2009-Obama, 2685]             you. God bless you. And God bless the | United_States_of_America | .                                           
-    ##  [2013-Obama, 2313]     God bless you, and may He forever bless these | United_States_of_America | .                                           
-    ##   [2017-Trump, 347]         . This is your celebration. And this, the | United_States_of_America | , is your country. What truly matters is not
-    ##  [2017-Trump, 1140] of our politics will be a total allegiance to the | United_States_of_America | , and through our loyalty to our country, we
-    ##  [2021-Biden, 1051]            . And, we must meet this moment as the | United_States_of_America | . If we do that, I guarantee you,
+    ## Keyword-in-context with 6 matches.                                                                       
+    ##   [2005-Bush, 2308]          God bless you, and may He watch over the |
+    ##  [2009-Obama, 2685]             you. God bless you. And God bless the |
+    ##  [2013-Obama, 2313]     God bless you, and may He forever bless these |
+    ##   [2017-Trump, 347]         . This is your celebration. And this, the |
+    ##  [2017-Trump, 1140] of our politics will be a total allegiance to the |
+    ##  [2021-Biden, 1051]            . And, we must meet this moment as the |
+    ##                                                                         
+    ##  United_States_of_America | .                                           
+    ##  United_States_of_America | .                                           
+    ##  United_States_of_America | .                                           
+    ##  United_States_of_America | , is your country. What truly matters is not
+    ##  United_States_of_America | , and through our loyalty to our country, we
+    ##  United_States_of_America | . If we do that, I guarantee you,
 
 ## Excercise: inspecting a corpus
 
@@ -438,7 +563,7 @@ zoo <- c("bear x2", "Ostric7", "platypus x60", "x7 Eliphant", "x16 conDOR")
 ```
 
 Use the functions in the `stringr` to clean up the string, taking out
-typos. Generate an *R* dataframe with the following variables: *animal*
+typos. Generate a dataframe with the following variables: *animal*
 (character), *number* (numeric).
 
 ``` r
@@ -449,7 +574,7 @@ typos. Generate an *R* dataframe with the following variables: *animal*
     issues, as a result of which there can be multiple packages that do
     the same thing. For example, functions in base `R` and the
     **stringi** package also let you manipulate strings in `R`. However,
-    the syntax of the function calls in these different libraries is
+    the syntax of the function calls in these different packages is
     different.
 
 [^2]: This exercise is based on an example from Automated Data
