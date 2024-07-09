@@ -371,6 +371,14 @@ Use the functions in the `stringr` to clean up the string, taking out typos. Gen
 
 ```
 
+Plot this data using `ggplot2`, call the resulting plot `zoo_plot`, and save it in a file called `zoo_plot.png` in the current working directory. 
+
+```{r, out.width='\\textwidth'}
+
+#your answer here
+
+```
+
 
 
 
