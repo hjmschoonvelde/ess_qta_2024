@@ -2,9 +2,9 @@
 title: "QTA Day 3: Reading in text data. Inspecting a dfm."
 output:
   github_document:
-  html_document:
-    theme: readable
-  pdf_document: default
+  #html_document:
+  #  theme: readable
+  #pdf_document: default
 #date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---
 
@@ -32,7 +32,7 @@ library(tidyverse)
 Let's take a look a set of UK prime minister speeches from the [EUSpeech](https://dataverse.harvard.edu/dataverse/euspeech) dataset. 
 
 
-Read in the speeches as follows using the `read.csv()` function: 
+Read in the speeches as follows using the `read.csv()` function from base `R`: 
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
@@ -45,10 +45,11 @@ speeches <- read.csv(file = "speeches_uk.csv",
 
 This `read.csv()` call tells `R` that:
 
-1. speeches_uk.csv contains a header (i.e., variable names)
-2. we don't want string variables to be turned into factors
-3. speeches_uk.csv separates variables using a comma
-4. the encoding is UTF\_8, which refers to a particular way that bytes are turned into textual characters that we can read.
+- the file is called "speeches_uk.csv"
+- the first row contains the column names
+- the columns are separated by commas
+- the encoding is UTF-8
+- we don't want to turn strings into factors, which is a different data type in `R` that is not useful for text analysis
 
 Let's take a look at the structure of this dataset:
 
@@ -63,13 +64,16 @@ As you can see, the corpus contains 787 speeches and variables containing meta d
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
 #remove html tags
-speeches$text <- str_replace_all(speeches$text, "<.*?>", "")
-#replace multiple white spaces with single white spaces
+
+speeches$text <- str_replace_all(speeches$text, "<.*?>", " ")
+
+#replace multiple white spaces with a single white space
+
 speeches$text <- str_squish(speeches$text)
   
 ```
 
-Our speeches object is currently a dataframe. To be able to apply functions in `quanteda` on this object it needs to recognize it as a corpus object. To do this we can use the `corpus()` function
+Our speeches object is currently a dataframe. To be able to apply functions in `quanteda` on this object it needs to recognize it as a corpus object. To do this we can use the `corpus()` function. We point to the `text` variable in the dataframe that contains the text data using the `text_field` argument. By default the text_field argument assumes that the text data is stored in a variable called "text". If this is not the case, you need to specify the name of the variable that contains the text data.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
@@ -77,6 +81,7 @@ corpus_speeches <- corpus(speeches,
                           text_field = "text")
 
 #the ndoc function displays the number of documents in the corpus
+
 ndoc(corpus_speeches)
 
 ```
@@ -103,16 +108,23 @@ Let's tokenize this corpus. We'll use the argument `padding=TRUE` to leave an em
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
 tokens_speech <- corpus_speeches %>%
-    tokens(remove_punct = TRUE, padding = TRUE) %>%
+  tokens(what = "word",
+         remove_punct = TRUE, 
+         padding = TRUE,
+         remove_symbols = TRUE, 
+         remove_numbers = FALSE,
+         remove_url = TRUE,
+         remove_separators = TRUE,
+         split_hyphens = FALSE) %>%
   tokens_remove(stopwords("en")) 
   
 ```
 
-Let's check the most occurring collocations (this may take a few seconds)
+Let's check the most occurring collocations (this may take a few seconds). In order to speed things up, we can sample a subset of the tokens object by using the `tokens_sample()` function.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 collocations <- tokens_speech %>%
-  tokens_sample(size = 10, replace = FALSE) %>%
+  #tokens_sample(size = 10, replace = FALSE) %>%
   textstat_collocations(min_count = 10) %>%
   arrange(-lambda)
 
@@ -120,7 +132,7 @@ head(collocations, 10)
 
 ```
 
-We may also focus on proper names only by looking for collocations of adjacent words that both start with capital letters
+We may also focus on proper names only by looking for collocations of adjacent words that both start with capital letters. We can do this by using the `tokens_select()` function with the `pattern` argument set to a regular expression that matches capital letters.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
@@ -135,9 +147,10 @@ head(collocations_names, 20)
 
 ```
 
-If we want to add the most surprising collocations to our tokens object we can do so using `tokens_compund()`:
+If we want to add the most occurring collocations to the tokens object, we can use the `tokens_compound()` function. This function takes a tokens object and a vector of collocations, and returns a new tokens object where the collocations are combined into single tokens.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
 collocations <- collocations %>%
   filter(lambda > 10) %>%
   pull(collocation) %>%
@@ -148,12 +161,19 @@ tokens_speech <- tokens_compound(tokens_speech, collocations)
 ```
 
 
-Let's create a new tokens object, but this time we group it by speaker by applying `tokens_group(groups = speaker)` This concatenates the tokens in the speeches of all 3 speakers. We thus end up with a tokens object that consists of 3 documents.
+Let's create a new tokens object, but this time we group it by speaker by applying `tokens_group(groups = speaker)`. This concatenates the tokens in the speeches of all 3 speakers. We thus end up with a tokens object that consists of 3 documents.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
 tokens_speech_speaker <- corpus_speeches %>%
-  tokens(remove_punct = TRUE) %>%
+  tokens(what = "word",
+         remove_punct = TRUE, 
+         padding = FALSE,
+         remove_symbols = TRUE, 
+         remove_numbers = FALSE,
+         remove_url = TRUE,
+         remove_separators = TRUE,
+         split_hyphens = FALSE) %>%
   tokens_remove(stopwords("en")) %>%
   tokens_group(groups = speaker)
 
@@ -161,7 +181,7 @@ ndoc(tokens_speech_speaker)
   
 ```
 
-Now let's construct a dfm 
+Now let's construct a dfm from this tokens object.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
@@ -185,7 +205,7 @@ dim(speeches_dfm_speaker)
 
 ```
 
-There are over 44,000 features in this dfm. Let's select those tokens that appear at least 10 times by using the `dfm_trim()` function
+There are over 26,000 features in this dfm. Let's select those tokens that appear at least 10 times by using the `dfm_trim()` function
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 

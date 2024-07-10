@@ -1,3 +1,6 @@
+QTA Day 3: Reading in text data. Inspecting a dfm.
+================
+
 In this document we will go through the steps of going from raw texts to
 a document term matrix that can be analyzed.
 
@@ -16,7 +19,8 @@ library(tidyverse)
 Let’s take a look a set of UK prime minister speeches from the
 [EUSpeech](https://dataverse.harvard.edu/dataverse/euspeech) dataset.
 
-Read in the speeches as follows using the `read.csv()` function:
+Read in the speeches as follows using the `read.csv()` function from
+base `R`:
 
 ``` r
 speeches <- read.csv(file = "speeches_uk.csv", 
@@ -28,11 +32,12 @@ speeches <- read.csv(file = "speeches_uk.csv",
 
 This `read.csv()` call tells `R` that:
 
-1.  speeches_uk.csv contains a header (i.e., variable names)
-2.  we don’t want string variables to be turned into factors
-3.  speeches_uk.csv separates variables using a comma
-4.  the encoding is UTF_8, which refers to a particular way that bytes
-    are turned into textual characters that we can read.
+- the file is called “speeches_uk.csv”
+- the first row contains the column names
+- the columns are separated by commas
+- the encoding is UTF-8
+- we don’t want to turn strings into factors, which is a different data
+  type in `R` that is not useful for text analysis
 
 Let’s take a look at the structure of this dataset:
 
@@ -56,20 +61,29 @@ about yesterday.
 
 ``` r
 #remove html tags
-speeches$text <- str_replace_all(speeches$text, "<.*?>", "")
-#replace multiple white spaces with single white spaces
+
+speeches$text <- str_replace_all(speeches$text, "<.*?>", " ")
+
+#replace multiple white spaces with a single white space
+
 speeches$text <- str_squish(speeches$text)
 ```
 
 Our speeches object is currently a dataframe. To be able to apply
 functions in `quanteda` on this object it needs to recognize it as a
-corpus object. To do this we can use the `corpus()` function
+corpus object. To do this we can use the `corpus()` function. We point
+to the `text` variable in the dataframe that contains the text data
+using the `text_field` argument. By default the text_field argument
+assumes that the text data is stored in a variable called “text”. If
+this is not the case, you need to specify the name of the variable that
+contains the text data.
 
 ``` r
 corpus_speeches <- corpus(speeches, 
                           text_field = "text")
 
 #the ndoc function displays the number of documents in the corpus
+
 ndoc(corpus_speeches)
 ```
 
@@ -84,14 +98,16 @@ limit the output):
 head(docvars(corpus_speeches, "date"), 10)
 ```
 
-    ##  [1] "18-12-2015" "10-12-2015" "09-12-2015" "07-12-2015" "07-12-2015" "01-12-2015" "28-11-2015" "23-11-2015" "19-11-2015" "16-11-2015"
+    ##  [1] "18-12-2015" "10-12-2015" "09-12-2015" "07-12-2015" "07-12-2015"
+    ##  [6] "01-12-2015" "28-11-2015" "23-11-2015" "19-11-2015" "16-11-2015"
 
 ``` r
 #speaker
 head(docvars(corpus_speeches, "speaker"), 10)
 ```
 
-    ##  [1] "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron"
+    ##  [1] "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron"
+    ##  [6] "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron" "D. Cameron"
 
 ``` r
 #number of speeches per speaker
@@ -110,32 +126,46 @@ post-selected tokens, for instance if collocations need to be computed.
 
 ``` r
 tokens_speech <- corpus_speeches %>%
-    tokens(remove_punct = TRUE, padding = TRUE) %>%
+  tokens(what = "word",
+         remove_punct = TRUE, 
+         padding = TRUE,
+         remove_symbols = TRUE, 
+         remove_numbers = FALSE,
+         remove_url = TRUE,
+         remove_separators = TRUE,
+         split_hyphens = FALSE) %>%
   tokens_remove(stopwords("en")) 
 ```
 
 Let’s check the most occurring collocations (this may take a few
-seconds)
+seconds). In order to speed things up, we can sample a subset of the
+tokens object by using the `tokens_sample()` function.
 
 ``` r
 collocations <- tokens_speech %>%
-  tokens_sample(size = 10, replace = FALSE) %>%
+  #tokens_sample(size = 10, replace = FALSE) %>%
   textstat_collocations(min_count = 10) %>%
   arrange(-lambda)
 
 head(collocations, 10)
 ```
 
-    ##        collocation count count_nested length   lambda         z
-    ## 6        abu dhabi    10            0      2 9.829464  9.602976
-    ## 5       high speed    10            0      2 9.377264  9.652262
-    ## 1   prime minister    31            0      2 8.863526 15.046597
-    ## 4     two thousand    10            0      2 8.319356 10.734795
-    ## 2  islamic finance    17            0      2 7.133426 13.442023
-    ## 3 financial system    10            0      2 6.796808 12.458216
+    ##         collocation count count_nested length   lambda         z
+    ## 4233     anita rani    56            0      2 18.35487 11.202897
+    ## 5055      sinn fein    13            0      2 18.02196  8.928687
+    ## 5073    magna carta    12            0      2 17.94500  8.884100
+    ## 5091 PRIME MINISTER    11            0      2 17.86162  8.835291
+    ## 5110 CHECK DELIVERY    10            0      2 17.77065  8.781400
+    ## 4412   sierra leone    25            0      2 17.55933 10.674645
+    ## 4500     konnie huq    18            0      2 17.23843 10.450946
+    ## 4635      hong kong    11            0      2 16.76301 10.101821
+    ## 4657  amy winehouse    10            0      2 16.67204 10.031926
+    ## 4323    rolls royce    24            0      2 16.42071 10.915557
 
 We may also focus on proper names only by looking for collocations of
-adjacent words that both start with capital letters
+adjacent words that both start with capital letters. We can do this by
+using the `tokens_select()` function with the `pattern` argument set to
+a regular expression that matches capital letters.
 
 ``` r
 collocations_names <- tokens_select(tokens_speech, 
@@ -149,29 +179,31 @@ head(collocations_names, 20)
 ```
 
     ##          collocation count count_nested length    lambda         z
-    ## 1     Prime Minister  2940            0      2  8.299670 165.65743
-    ## 2     European Union   906            0      2  8.938397  82.70602
-    ## 3   Northern Ireland   402            0      2 10.482232  74.15258
-    ## 4       Gordon Brown   223            0      2  9.936557  66.24914
-    ## 5   European Council   203            0      2  5.421361  63.18811
-    ## 6   Security Council   179            0      2  8.273660  62.89978
-    ## 7    President Obama   220            0      2  7.355313  62.86862
-    ## 8         World Bank   132            0      2  7.435305  62.39022
-    ## 9         Mr Speaker   133            0      2  7.527382  60.80924
-    ## 10     David Cameron   126            0      2  8.208004  60.46725
-    ## 11    Health Service   162            0      2  9.966575  60.12869
-    ## 12   National Health   120            0      2  7.969146  59.54455
-    ## 13      Bank England   110            0      2  7.695647  58.40483
-    ## 14     United States   314            0      2  8.809455  57.43262
-    ## 15         World War   123            0      2  8.509483  55.93760
-    ## 16      South Africa    98            0      2  7.322759  53.71959
-    ## 17 Secretary General    79            0      2  7.801000  49.88885
-    ## 18       UN Security    73            0      2  7.512002  49.74734
-    ## 19   Secretary State    75            0      2  7.882326  48.44084
-    ## 20       Middle East   179            0      2 10.744221  46.55304
+    ## 1     Prime Minister  4722            0      2 11.700254 120.58679
+    ## 2     European Union   961            0      2  9.083945  84.18653
+    ## 3   Northern Ireland   420            0      2 10.701788  73.24571
+    ## 4       Gordon Brown   270            0      2 10.415701  67.57215
+    ## 5   European Council   219            0      2  5.527418  66.27404
+    ## 6    President Obama   251            0      2  7.599443  63.92949
+    ## 7   Security Council   186            0      2  8.373149  63.24294
+    ## 8         World Bank   132            0      2  7.441485  62.79308
+    ## 9      David Cameron   133            0      2  8.286021  61.81150
+    ## 10    Health Service   175            0      2 10.135930  61.30426
+    ## 11     United States   325            0      2  8.795153  60.11721
+    ## 12   National Health   120            0      2  7.979117  60.04263
+    ## 13      Bank England   111            0      2  7.685862  58.97230
+    ## 14         World War   132            0      2  8.632801  57.57488
+    ## 15      South Africa   100            0      2  7.344950  54.27977
+    ## 16        Mr Speaker   269            0      2  9.637184  53.79388
+    ## 17      Mr President   135            0      2  4.989427  51.45508
+    ## 18 Secretary General    85            0      2  7.915188  51.40328
+    ## 19       UN Security    73            0      2  7.544899  50.05751
+    ## 20   Secretary State    79            0      2  7.943002  49.55369
 
-If we want to add the most surprising collocations to our tokens object
-we can do so using `tokens_compund()`:
+If we want to add the most occurring collocations to the tokens object,
+we can use the `tokens_compound()` function. This function takes a
+tokens object and a vector of collocations, and returns a new tokens
+object where the collocations are combined into single tokens.
 
 ``` r
 collocations <- collocations %>%
@@ -183,13 +215,20 @@ tokens_speech <- tokens_compound(tokens_speech, collocations)
 ```
 
 Let’s create a new tokens object, but this time we group it by speaker
-by applying `tokens_group(groups = speaker)` This concatenates the
+by applying `tokens_group(groups = speaker)`. This concatenates the
 tokens in the speeches of all 3 speakers. We thus end up with a tokens
 object that consists of 3 documents.
 
 ``` r
 tokens_speech_speaker <- corpus_speeches %>%
-  tokens(remove_punct = TRUE) %>%
+  tokens(what = "word",
+         remove_punct = TRUE, 
+         padding = FALSE,
+         remove_symbols = TRUE, 
+         remove_numbers = FALSE,
+         remove_url = TRUE,
+         remove_separators = TRUE,
+         split_hyphens = FALSE) %>%
   tokens_remove(stopwords("en")) %>%
   tokens_group(groups = speaker)
 
@@ -198,7 +237,7 @@ ndoc(tokens_speech_speaker)
 
     ## [1] 3
 
-Now let’s construct a dfm
+Now let’s construct a dfm from this tokens object.
 
 ``` r
 speeches_dfm_speaker <- dfm(tokens_speech_speaker)
@@ -211,10 +250,12 @@ It’s straightforward in **quanteda** to inspect a dfm. For example, the
 topfeatures(speeches_dfm_speaker, 20)
 ```
 
-    ##    people       can     think     world      want      make      just       now      also      need       one   country       new     going 
-    ##     10628      9617      8848      5443      5119      4967      4817      4632      4512      4423      4342      4342      4305      4257 
-    ## countries   britain     prime        us  minister      work 
-    ##      4076      4055      4040      3928      3898      3884
+    ##    people       can     think     world       now      want  minister      make 
+    ##     10889      9791      8865      5901      5460      5150      5105      5006 
+    ##     prime      just   country      it’s      also       one      need   britain 
+    ##      4984      4953      4673      4561      4541      4500      4480      4320 
+    ##       new     going countries     today 
+    ##      4320      4276      4212      4170
 
 You can check the number of features in the dfm using the dim()
 function:
@@ -223,9 +264,9 @@ function:
 dim(speeches_dfm_speaker)
 ```
 
-    ## [1]     3 44617
+    ## [1]     3 26395
 
-There are over 44,000 features in this dfm. Let’s select those tokens
+There are over 26,000 features in this dfm. Let’s select those tokens
 that appear at least 10 times by using the `dfm_trim()` function
 
 ``` r
@@ -233,7 +274,7 @@ speeches_dfm_speaker = dfm_trim(speeches_dfm_speaker, min_termfreq = 10)
 dim(speeches_dfm_speaker)
 ```
 
-    ## [1]    3 6951
+    ## [1]    3 6938
 
 As you can see, this reduces the size of the dfm considerably. However,
 be mindful that applying such arbitrary cutoffs may remove meaningful
@@ -287,17 +328,17 @@ can use `textstat_keyness()` and `textplot_keyness()` functions.
 head(textstat_keyness(speeches_dfm_speaker, target = "D. Cameron"), 10)
 ```
 
-    ##     feature     chi2 p n_target n_reference
-    ## 1      good 454.6483 0     1970         579
-    ## 2        eu 339.3730 0      792         123
-    ## 3  eurozone 331.3737 0      466          11
-    ## 4     syria 302.0232 0      428          11
-    ## 5     think 277.5433 0     5761        3087
-    ## 6    things 247.2193 0     1708         651
-    ## 7     libya 247.0987 0      373          16
-    ## 8        uk 238.7475 0     1154         364
-    ## 9     terms 236.0412 0      825         205
-    ## 10  britain 230.3162 0     2764        1291
+    ##     feature      chi2 p n_target n_reference
+    ## 1      it’s 1393.8768 0     3845         716
+    ## 2     we’re  877.6312 0     2339         416
+    ## 3     we’ve  688.7697 0     2483         608
+    ## 4    that’s  589.8813 0     1811         380
+    ## 5       i’m  500.8595 0     1548         327
+    ## 6      good  421.5894 0     2035         618
+    ## 7   there’s  370.5170 0      935         154
+    ## 8  eurozone  340.5584 0      490          11
+    ## 9        eu  328.4241 0      810         129
+    ## 10   you’re  327.3597 0      826         136
 
 ``` r
 textplot_keyness(textstat_keyness(speeches_dfm_speaker, target = "D. Cameron"), n = 10)
