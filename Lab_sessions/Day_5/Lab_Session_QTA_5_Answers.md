@@ -1,428 +1,595 @@
-Categorizing text using dictionaries
+Supervised machine learning
 ================
-14 July, 2023
+15 July, 2024
 
-This document describes how to use dictionary methods in **quanteda**.
-Let’s first load the required libraries.
+This document walks you through an example of supervised machine
+learning to predict which UK prime minister delivered a speech. For this
+we’ll use UK prime minister speeches from the
+[EUSpeech](https://dataverse.harvard.edu/dataverse/euspeech) dataset.
+
+For the supervised machine learning exercise you will need to install
+the `quanteda.textmodels`, `quanteda.textplots` and the
+`quanteda.textstats` libraries. We will also use the `tidyverse` library
+to create training and test sets. Furthermore, we will use the `caret`
+library to produce a confusion matrix. This library requires some
+dependencies (i.e., functions from other libraries), so if you are
+working from your computer will need install it like so:
+`install.packages('caret', dependencies = TRUE)`.
 
 ``` r
+#load libraries
 library(quanteda)
-library(stringr)
+library(quanteda.textmodels)
+library(quanteda.textplots)
+library(quanteda.textstats)
 library(tidyverse)
-library(quanteda.sentiment)
+library(caret)
 ```
 
-Let’s save the inaugural speeches as an object `speeches_inaugural`
+Let’s read in the speeches using the `read.csv()` function. We’ll also
+construct a corpus and select speeches from Gordon Brown and David
+Cameron.
 
 ``` r
-speeches_inaugural <- data_corpus_inaugural
+speeches <- read.csv(file = "speeches_uk.csv", 
+                     header = TRUE, 
+                     stringsAsFactors = FALSE, 
+                     sep = ",", 
+                     encoding = "UTF-8")
+
+#construct a corpus
+corpus_pm <- corpus(speeches)
+#select speeches from Cameron and Brown
+corpus_brown_cameron <- corpus_subset(corpus_pm, speaker != "T. Blair")
 ```
 
-We’ll first tokenize this corpus and create a dfm
+In a next step, we’ll turn the date variable in a date format instead of
+character format. We can use the `as.Date()` function to convert a
+character string to a date. %d-%m-%Y is the format of the date in the
+speeches, denoting day-month-year.
 
 ``` r
-tokens_inuagural <- tokens(speeches_inaugural,
-                           what = "word",
-                           remove_punct = TRUE, 
-                           remove_symbols = TRUE, 
-                           remove_numbers = FALSE,
-                           remove_url = TRUE,
-                           remove_separators = TRUE,
-                           split_hyphens = FALSE,
-                           padding = FALSE
-                       )
-
-dfm_inaugural <- dfm(tokens_inuagural)
+docvars(corpus_brown_cameron, "date") <- as.Date(docvars(corpus_brown_cameron, "date"), "%d-%m-%Y")
 ```
 
-## Off-the shelf dictionaries
-
-**quanteda.sentiment** contains a number of off-the-shelf sentiment
-dictionaries. Let’s take a look at the Lexicoder Sentiment Dictionary
-from Young and Soroka (2012). It’s stored in `quanteda.textmodels` as a
-dictionary object under `data_dictionary_LSD2015`.
+Let’s tokenise this corpus and create a dfm called dfm_brown_cameron.
+We’ll remove punctuation, symbols, numbers, urls, separators, and split
+hyphens. We’ll also remove stopwords.
 
 ``` r
-summary(data_dictionary_LSD2015)
+tokens_brown_cameron <- tokens(corpus_brown_cameron,
+                            what = "word",
+                            remove_punct = TRUE, 
+                            remove_symbols = TRUE, 
+                            remove_numbers = TRUE,
+                            remove_url = TRUE,
+                            remove_separators = TRUE,
+                            split_hyphens = FALSE,
+                            padding = FALSE
+                            ) %>%
+  tokens_remove(stopwords("en"))
 ```
 
-    ##              Length Class  Mode     
-    ## negative     2858   -none- character
-    ## positive     1709   -none- character
-    ## neg_positive 1721   -none- character
-    ## neg_negative 2860   -none- character
+In order to make this dfm less sparse, we will only select features that
+appear in at least 2% of speeches
 
 ``` r
-print(data_dictionary_LSD2015, max_nval = 5)
+dfm_brown_cameron <- dfm(tokens_brown_cameron ) %>%
+  dfm_trim(min_docfreq = 0.02, docfreq_type = "prop")
+
+dim(dfm_brown_cameron)
 ```
 
-    ## Dictionary object with 4 key entries.
-    ## Polarities: pos = "positive", "neg_negative"; neg = "negative", "neg_positive" 
-    ## - [negative]:
-    ##   - a lie, abandon*, abas*, abattoir*, abdicat* [ ... and 2,853 more ]
-    ## - [positive]:
-    ##   - ability*, abound*, absolv*, absorbent*, absorption* [ ... and 1,704 more ]
-    ## - [neg_positive]:
-    ##   - best not, better not, no damag*, no no, not ability* [ ... and 1,716 more ]
-    ## - [neg_negative]:
-    ##   - not a lie, not abandon*, not abas*, not abattoir*, not abdicat* [ ... and 2,855 more ]
+    ## [1]  776 4411
 
-We can use `dfm_lookup` to apply it to the inaugural speeches:
+We now have a dfm containing 776 speeches delivered by either Gordon
+Brown or David Cameron and approximately 4400 tokens.
+
+## Naive Bayes
+
+Let’s see if we can build a classifier to predict if a speech is
+delivered by Cameron or Brown. First, we’ll generate a vector of 250
+random numbers selected from the vector 1:776. We’ll also append an id
+variable`id_numeric` to our dfm.
+
+**NB**: The `set.seed()` function makes sure that you can reproduce your
+random samples.
 
 ``` r
-dfm_inaugural_LSD <- dfm_lookup(dfm_inaugural, 
-                                dictionary = data_dictionary_LSD2015)
+#set.seed() allows us to reproduce randomly generated results 
+set.seed(2)
 
-head(dfm_inaugural_LSD)
+#generate a sample of 250 numbers without replacement from 1 to 776
+
+id_train <- sample(1:nrow(dfm_brown_cameron), 250, replace = FALSE)
+head(id_train, 10)
 ```
 
-    ## Document-feature matrix of: 6 documents, 4 features (50.00% sparse) and 4 docvars.
-    ##                  features
-    ## docs              negative positive neg_positive neg_negative
-    ##   1789-Washington       43      121            0            0
-    ##   1793-Washington        3       10            0            0
-    ##   1797-Adams            61      238            0            0
-    ##   1801-Jefferson        70      177            0            0
-    ##   1805-Jefferson        95      164            0            0
-    ##   1809-Madison          62      138            0            0
-
-*Question*: The columns that contain negations of positive sentiment and
-of negative sentiment contain zeroes. Why is this?
-
-We can calculate the relative fraction of negative sentiment tokens to
-positive sentiment tokens in each speech as follows:
+    ##  [1] 710 774 416 392 273 349 204 381 297 690
 
 ``` r
-#fraction of negative words
-docvars(dfm_inaugural, "neg_words") <- as.numeric(dfm_inaugural_LSD[,1])
+#create id variable
+docvars(dfm_brown_cameron, "id_numeric") <- 1:ndoc(dfm_brown_cameron)
 
-#fraction of positive words
-docvars(dfm_inaugural, "pos_words") <- as.numeric(dfm_inaugural_LSD[,2])
-
-#sentiment score
-docvars(dfm_inaugural, "LSD_sentiment")  <-  (docvars(dfm_inaugural, "pos_words") - docvars(dfm_inaugural, "neg_words"))/ntoken(dfm_inaugural)
-
-docvars(dfm_inaugural, c("President", "LSD_sentiment"))
-```
-
-    ##     President LSD_sentiment
-    ## 1  Washington   0.054545455
-    ## 2  Washington   0.051851852
-    ## 3       Adams   0.076358930
-    ## 4   Jefferson   0.061993048
-    ## 5   Jefferson   0.031855956
-    ## 6     Madison   0.064680851
-    ## 7     Madison   0.014876033
-    ## 8      Monroe   0.063501484
-    ## 9      Monroe   0.043400447
-    ## 10      Adams   0.048370497
-    ## 11    Jackson   0.070035461
-    ## 12    Jackson   0.049319728
-    ## 13  Van Buren   0.043761396
-    ## 14   Harrison   0.032796590
-    ## 15       Polk   0.044555486
-    ## 16     Taylor   0.098345588
-    ## 17     Pierce   0.064506451
-    ## 18   Buchanan   0.046033994
-    ## 19    Lincoln   0.013483764
-    ## 20    Lincoln  -0.008583691
-    ## 21      Grant   0.057675244
-    ## 22      Grant   0.045590433
-    ## 23      Hayes   0.062801932
-    ## 24   Garfield   0.036302521
-    ## 25  Cleveland   0.073677956
-    ## 26   Harrison   0.044915641
-    ## 27  Cleveland   0.046176763
-    ## 28   McKinley   0.064312736
-    ## 29   McKinley   0.048824593
-    ## 30  Roosevelt   0.041666667
-    ## 31       Taft   0.034076257
-    ## 32     Wilson   0.035314891
-    ## 33     Wilson   0.045127534
-    ## 34    Harding   0.047790803
-    ## 35   Coolidge   0.054980276
-    ## 36     Hoover   0.051714446
-    ## 37  Roosevelt   0.040957447
-    ## 38  Roosevelt   0.039269912
-    ## 39  Roosevelt   0.041014169
-    ## 40  Roosevelt   0.062836625
-    ## 41     Truman   0.087147887
-    ## 42 Eisenhower   0.067644662
-    ## 43 Eisenhower   0.055455093
-    ## 44    Kennedy   0.024890190
-    ## 45    Johnson   0.020819342
-    ## 46      Nixon   0.047551789
-    ## 47      Nixon   0.068257492
-    ## 48     Carter   0.089869281
-    ## 49     Reagan   0.039473684
-    ## 50     Reagan   0.053042122
-    ## 51       Bush   0.060854553
-    ## 52    Clinton   0.030037547
-    ## 53    Clinton   0.034770515
-    ## 54       Bush   0.054924242
-    ## 55       Bush   0.060840174
-    ## 56      Obama   0.030962343
-    ## 57      Obama   0.043395327
-    ## 58      Trump   0.052595156
-    ## 59      Biden   0.024873524
-
-Let’s do the same, but this time with the NRC Word-Emotion Association
-Lexicon
-
-``` r
-dfm_inaugural_NRC <- dfm_lookup(dfm_inaugural, 
-                                dictionary = data_dictionary_NRC)
-
-
-#fraction of negative words (NB: located in the 6th column in the dfm)
-docvars(dfm_inaugural, "neg_NRC_words") <- as.numeric(dfm_inaugural_NRC[,6])
-
-#fraction of positive words (NB: located in the 7th column in the dfm)
-docvars(dfm_inaugural, "pos_NRC_words") <- as.numeric(dfm_inaugural_NRC[,7])
-
-#sentiment score
-docvars(dfm_inaugural, "NRC_sentiment")  <- (docvars(dfm_inaugural, "pos_NRC_words") - docvars(dfm_inaugural, "neg_NRC_words"))/ntoken(dfm_inaugural)
-
-head(docvars(dfm_inaugural, c("President", "NRC_sentiment")))
-```
-
-    ##    President NRC_sentiment
-    ## 1 Washington    0.05454545
-    ## 2 Washington    0.09629630
-    ## 3      Adams    0.07031924
-    ## 4  Jefferson    0.05735805
-    ## 5  Jefferson    0.06094183
-    ## 6    Madison    0.06638298
-
-Let’s plot the correlation
-
-``` r
-cor(docvars(dfm_inaugural, "LSD_sentiment"), docvars(dfm_inaugural, "NRC_sentiment"))
-```
-
-    ## [1] 0.7607552
-
-``` r
-correlation_plot_LSD_NRC <- ggplot(docvars(dfm_inaugural), aes(LSD_sentiment, NRC_sentiment)) + 
-  geom_point(pch = 21, fill = "gray25", color = "white", size = 2.5) +
-  scale_x_continuous(name = "NRC sentiment") +
-  scale_y_continuous(name = "LSD sentiment") +
-  theme_minimal()
-
-print(correlation_plot_LSD_NRC)
-```
-
-![](Lab_Session_QTA_5_Answers_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
-
-The correlation of 0.76 is pretty good since both measures intend to
-capture the same construct
-
-As a last step we’ll inspect if Presidents make use of narrative arches
-in their speeches. For example, they may start a speech more subdued and
-end on a more positive note. Or they may start positive and end
-positive. Let’s first create a paragraph-based dfm of Obama’s inaugural
-speeches
-
-``` r
-obama_corpus <- corpus_subset(speeches_inaugural, President == "Obama") %>%
-  corpus_reshape(to =  "paragraph")
-
-ndoc(obama_corpus)
-```
-
-    ## [1] 65
-
-``` r
-obama_tokens <- tokens(obama_corpus,
-                           what = "word",
-                           remove_punct = TRUE, 
-                           remove_symbols = TRUE, 
-                           remove_numbers = FALSE,
-                           remove_url = TRUE,
-                           remove_separators = TRUE,
-                           split_hyphens = FALSE,
-                           padding = FALSE
-                       )
-
-obama_dfm <- dfm(obama_tokens)
-```
-
-Let’s apply the NRC dictionary to this dfm
-
-``` r
-obama_dfm_NRC <- dfm_lookup(obama_dfm, 
-                                dictionary = data_dictionary_NRC)
-
-docvars(obama_dfm, "neg_words") <- as.numeric(obama_dfm_NRC[,6])
-
-docvars(obama_dfm, "pos_words") <- as.numeric(obama_dfm_NRC[,7])
-
-#sentiment score
-docvars(obama_dfm, "NRC_sentiment")  <-  (docvars(obama_dfm, "pos_words") - docvars(obama_dfm, "neg_words"))/nfeat(obama_dfm)
-```
-
-Let’s plot this
-
-``` r
-table(docvars(obama_dfm, "Year"))
+#take note of how many speeches were delivered by either Brown or Cameron
+table(docvars(dfm_brown_cameron, "speaker"))
 ```
 
     ## 
-    ## 2009 2013 
-    ##   36   29
+    ## D. Cameron   G. Brown 
+    ##        493        283
+
+We then take a sample of 250 speeches as our training data and turn it
+into a dfm. The `%in%` operator produces a logical vector of the same
+length as id_numeric, and contains a TRUE if `id_numeric[i]` appears in
+id_train and FALSE otherwise.
 
 ``` r
-docvars(obama_dfm, "sentence") <- NA
-docvars(obama_dfm, "sentence")[1:36] <- 1:36
-docvars(obama_dfm, "sentence")[37:65] <- 1:29
+# create a training set: a dfm of 250 documents with row numbers included in id_train
+train_dfm <- dfm_subset(dfm_brown_cameron, id_numeric %in% id_train)
 
-obama_plot <- ggplot(docvars(obama_dfm), aes(sentence, NRC_sentiment)) + 
-  geom_smooth() +
-  scale_x_continuous(name = "Sentence") +
-  scale_y_continuous(name = "NRC sentiment") +
-  theme_minimal() + facet_grid(~Year)
+#create a test set: a dfm of 100 documents whose row numbers are *not* included in id_train by using the negation operator `!`
+test_dfm <- dfm_subset(dfm_brown_cameron, !id_numeric %in% id_train)
+test_dfm <- dfm_sample(test_dfm, 100, replace = FALSE)
 
-print(obama_plot)
+#check whether there is no overlap between the train set and the test set using the which() function
+which((docvars(train_dfm, "id_numeric")  %in% docvars(test_dfm, "id_numeric")))
 ```
 
-![](Lab_Session_QTA_5_Answers_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+    ## integer(0)
 
-## Self made dictionaries
-
-When working with your own dictionary, most of the work will go into
-evaluating its validity and reliability in order to make sure that it
-captures the construct that you are looking for. However, once you have
-settled on a dictionary, it is easy in **quanteda** to apply it to a
-corpus.
-
-Let’s say where are interested in how often these presidents refer to
-the economy
+We can now train a Naive Bayes classifier on the training set using the
+`textmodel_nb()` function. We’ll use the `smooth` argument to apply
+Laplace smoothing. This is a technique to avoid zero probabilities in
+the model. The `smooth` argument specifies the smoothing parameter,
+which is usually set to 1. We’ll also use the `prior` argument to
+specify the prior distribution of the classes; “docfreq” denotes the
+prior probability of each class is the proportion of documents in the
+training set that belong to that class. This is the default setting in
+`textmodel_nb()`. The `distribution` argument specifies the distribution
+of the features.
 
 ``` r
-#create a dictionary
-econ_dict <- dictionary(list(Economy = c("econ*", "job*", "employ*", "industr*", "business*", "market*")))
+speaker_classifier_nb <- textmodel_nb(train_dfm, 
+                                      y = docvars(train_dfm, "speaker"), 
+                                      smooth = 1,
+                                      prior = "docfreq",
+                                      distribution = "multinomial")
 
-econ_dict_dfm <- dfm_lookup(dfm_inaugural, 
-                            dictionary = econ_dict)
-
-dim(econ_dict_dfm)
+summary(speaker_classifier_nb)
 ```
 
-    ## [1] 59  1
+    ## 
+    ## Call:
+    ## textmodel_nb.dfm(x = train_dfm, y = docvars(train_dfm, "speaker"), 
+    ##     smooth = 1, prior = "docfreq", distribution = "multinomial")
+    ## 
+    ## Class Priors:
+    ## (showing first 2 elements)
+    ## D. Cameron   G. Brown 
+    ##        0.6        0.4 
+    ## 
+    ## Estimated Feature Scores:
+    ##            european   council   focused   issues        uk migration    talked
+    ## D. Cameron 0.002113 0.0010938 0.0002424 0.001032 0.0016345 1.678e-04 0.0002424
+    ## G. Brown   0.001811 0.0006657 0.0001598 0.001757 0.0005725 3.329e-05 0.0007256
+    ##                last     night     come     back   shortly    first afternoon
+    ## D. Cameron 0.002063 0.0003232 0.001902 0.002306 3.729e-05 0.003356 0.0002051
+    ## G. Brown   0.002576 0.0002263 0.002576 0.001851 6.657e-05 0.003588 0.0001731
+    ##            discussed   ongoing    crisis    facing    winter     still     many
+    ## D. Cameron 0.0004599 6.215e-05 0.0004599 0.0001989 4.972e-05 0.0013424 0.002722
+    ## G. Brown   0.0004993 4.660e-05 0.0017641 0.0004460 2.663e-05 0.0009986 0.002909
+    ##             migrants   coming   europe   around  arriving       via   eastern
+    ## D. Cameron 5.593e-05 0.001175 0.001939 0.001429 4.972e-05 1.864e-05 1.243e-04
+    ## G. Brown   1.465e-04 0.001212 0.001385 0.001438 1.997e-05 3.329e-05 6.657e-05
+    ##            mediterranean     route
+    ## D. Cameron     6.215e-05 0.0001367
+    ## G. Brown       6.657e-06 0.0001465
+
+Let’s analyze if we can predict whether a speech in the test set is from
+Cameron or Brown in our test set. We’ll use the `predict()` function to
+predict the class of the test
 
 ``` r
-head(econ_dict_dfm)
+#Naive Bayes can only take features that occur both in the training set and the test set. We can make the features identical by passing train_dfm to dfm_match() as a pattern.
+
+matched_dfm <- dfm_match(test_dfm, features = featnames(train_dfm))
+
+#predict speaker 
+pred_speaker_classifier_nb <- predict(speaker_classifier_nb, 
+                                      newdata = matched_dfm, 
+                                      type = "class")
+
+head(pred_speaker_classifier_nb)
 ```
 
-    ## Document-feature matrix of: 6 documents, 1 feature (16.67% sparse) and 10 docvars.
-    ##                  features
-    ## docs              Economy
-    ##   1789-Washington       2
-    ##   1793-Washington       0
-    ##   1797-Adams            1
-    ##   1801-Jefferson        4
-    ##   1805-Jefferson        2
-    ##   1809-Madison          1
+    ##    text121    text748    text629    text326    text722    text228 
+    ## D. Cameron   G. Brown   G. Brown D. Cameron   G. Brown D. Cameron 
+    ## Levels: D. Cameron G. Brown
 
-If we want to average the average number of mentions per speaker we can
-save these dictionary results as a variable in our corpus object. Let’s
-call it `economy`.
+We could also predict the probability the model assigns to each class.
+We could use this to create an ROC curve.
 
 ``` r
-docvars(speeches_inaugural, "economy") <- as.numeric(econ_dict_dfm) / ntoken(dfm_inaugural)
-
-
-lineplot_economy <- ggplot(docvars(speeches_inaugural),
-                                aes(x = Year, y = economy)) +
-  geom_smooth() + theme_minimal()
-
-
-print(lineplot_economy)
+#predict probability of speaker
+pred_prob_classifier_nb <- predict(speaker_classifier_nb, 
+                                   newdata = matched_dfm, 
+                                   type = "probability")
 ```
 
-![](Lab_Session_QTA_5_Answers_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
-
-## Excercise
-
-Create a dictionary titled `threat_dictionary`, with threat as a key and
-threat, peril, risk, danger as values
+Let’s see how well our classifier did by producing a confusion matrix. A
+confusion matrix is a table that is often used to describe the
+performance of a classification model on a set of test data for which
+the true values are known.
 
 ``` r
-threat_dict <- dictionary(list(threat = c("threat", "peril*", "risk", "danger*")))
+tab_class_nb <- table(predicted_speaker_nb = pred_speaker_classifier_nb, 
+                      actual_speaker = docvars(test_dfm, "speaker"))
+
+print(tab_class_nb)
 ```
 
-Apply this dictionary to `dfm_inaugural` and call the resulting object
-`dfm_inaugural_threat`. Append the results in the docvars of
-`speeches_inaugural` as a variable `threat` containing the fraction of
-threat words in each speech
+    ##                     actual_speaker
+    ## predicted_speaker_nb D. Cameron G. Brown
+    ##           D. Cameron         54        0
+    ##           G. Brown           12       34
+
+So it appears we are somewhat successful at predicting whether a speech
+is delivered by Cameron or Brown. Our accuracy is 90%.
+
+Let’s have a look at the most predictive features for Cameron in the
+complete corpus.
 
 ``` r
-dfm_inaugural_threat <- dfm_lookup(dfm_inaugural, 
-                                dictionary = threat_dict)
+dfm_brown_cameron_grouped <- tokens_brown_cameron %>%
+  tokens_group(groups = speaker) %>%
+  dfm()
 
-docvars(speeches_inaugural, "threat") <- as.numeric(dfm_inaugural_threat) / ntoken(dfm_inaugural)
+keyness <- textstat_keyness(dfm_brown_cameron_grouped, target = "D. Cameron")
+textplot_keyness(keyness)
 ```
 
-Plot the fraction of threat words over time
+![](Lab_Session_QTA_5_Answers_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+
+We can also display the most occurring features for Brown and Cameron
+but without account for their `keyness`:
 
 ``` r
-lineplot_threat<- ggplot(docvars(speeches_inaugural),
-                                aes(x = Year, y = threat)) +
-  geom_line() + theme_minimal()
-
-
-print(lineplot_threat)
+topfeatures(dfm_brown_cameron, groups = speaker, n = 50)
 ```
 
-![](Lab_Session_QTA_5_Answers_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
+    ## $`D. Cameron`
+    ##      think     people        can       it’s       want       make       just 
+    ##       5761       5754       5176       3631       3279       3185       2978 
+    ##       need    country    britain      going        one government        get 
+    ##       2806       2795       2766       2675       2657       2510       2448 
+    ##      world       also      we’ve       work        now      we’re        new 
+    ##       2404       2384       2372       2348       2275       2238       2213 
+    ##      today       like      right        say         us       good        got 
+    ##       2095       2086       2084       2053       2003       1972       1931 
+    ##  countries   minister      first       know    british        see     things 
+    ##       1928       1869       1855       1784       1728       1711       1710 
+    ##       much      prime       take     that’s       well        way       time 
+    ##       1707       1706       1653       1642       1623       1616       1613 
+    ##       said  important   european      years       sure        i’m       help 
+    ##       1567       1554       1525       1485       1479       1469       1468 
+    ##      great 
+    ##       1450 
+    ## 
+    ## $`G. Brown`
+    ##        people           can         world      minister         think 
+    ##          4687          4430          2983          2894          2823 
+    ##         prime           now     countries          also           new 
+    ##          2477          2269          2113          2067          2037 
+    ##        global            us           got          want          just 
+    ##          1999          1862          1838          1770          1765 
+    ##          make           one          need          time         going 
+    ##          1725          1612          1556          1542          1526 
+    ##       economy         today       country          work        future 
+    ##          1518          1509          1500          1462          1439 
+    ##          know       believe international           get           say 
+    ##          1386          1356          1350          1346          1325 
+    ##         first       britain    government          help          take 
+    ##          1323          1274          1225          1221          1221 
+    ##          next      together         years          well          must 
+    ##          1219          1204          1201          1193          1174 
+    ##          year     financial         every           see          last 
+    ##          1137          1127          1123          1103          1074 
+    ##          said           way        system       support        change 
+    ##          1050          1046          1037          1022          1014
 
-Apply the NRC emotion detection lexicon to `dfm_inaugural` and append a
-varioble called nrc_fear as metadata to `speeches_inaugural` that
-contains the fraction of NRC fear words in each speech.
+In order to improve on our predictions, we may think of other ways to
+represent our documents. A common approach is to produce a
+feature-weighted dfm by calculating the term-frequency-inverse document
+frequency (tfidf) for each token. The intuition behind this
+transformation is that it gives a higher weight to tokens that occur
+often in a particular document but not much in other documents,
+comppared to tokens that occur often in a particular document but also
+in other documents. Tf-idf weighting is done through `dfm_tfidf()`.
 
 ``` r
-dfm_inaugural_fear <- dfm_lookup(dfm_inaugural, 
-                                dictionary = data_dictionary_NRC)
+train_dfm_weighted <- dfm_tfidf(train_dfm)
+matched_dfm_weighted <- dfm_tfidf(matched_dfm)
 
-docvars(speeches_inaugural, "nrc_fear") <- as.numeric(dfm_inaugural_fear[,4]) / ntoken(dfm_inaugural)
+speaker_classifier_weighted_nb <- textmodel_nb(train_dfm_weighted, 
+                                               y = docvars(train_dfm_weighted, "speaker"), 
+                                               smooth = 1,
+                                               prior = "docfreq",
+                                               distribution = "multinomial")
+
+pred_speaker_classifier_weigthed_nb <- predict(speaker_classifier_weighted_nb, 
+                                               newdata = matched_dfm_weighted, 
+                                               type = "class")
+
+tab_class_weighted_nb <- table(predicted_speaker_nb = pred_speaker_classifier_weigthed_nb, 
+                               actual_speaker = docvars(test_dfm, "speaker"))
+
+print(tab_class_weighted_nb)
 ```
 
-Plot the fraction of fear words over time
+    ##                     actual_speaker
+    ## predicted_speaker_nb D. Cameron G. Brown
+    ##           D. Cameron         54        3
+    ##           G. Brown           12       31
+
+We’ll, we actually did a bit worse this time. Let’s see if we can
+improve our predictions by using a different classifier.
+
+## Logistic regression
+
+Let’s try a different classifier, a logistic regression. This regression
+is not any different a logistic regression you may have come across
+estimating a regression model for a binary dependent variable, but this
+time we use it solely for prediction purposes.
 
 ``` r
-lineplot_fear<- ggplot(docvars(speeches_inaugural),
-                                aes(x = Year, y = nrc_fear)) +
-  geom_line() + theme_minimal()
+speaker_classifier_lr <- textmodel_lr(train_dfm, 
+                                      y = docvars(train_dfm, "speaker"))
 
+#predict speaker 
+pred_speaker_classifier_lr <- predict(speaker_classifier_lr, 
+                                   newdata = matched_dfm, 
+                                   type = "class")
 
-print(lineplot_fear)
+#confusion matrix
+tab_class_lr <- table(predicted_speaker_lr = pred_speaker_classifier_lr, 
+                       actual_speaker = docvars(test_dfm, "speaker"))
+print(tab_class_lr)
+```
+
+    ##                     actual_speaker
+    ## predicted_speaker_lr D. Cameron G. Brown
+    ##           D. Cameron         65        5
+    ##           G. Brown            1       29
+
+We now need to decide which of these classifiers works best for us. As
+discussed in class we would need to check precision, recall and F1
+scores. The `confusionMatrix()` function in the `caret` package does
+exactly that.
+
+``` r
+confusionMatrix(tab_class_nb, mode = "prec_recall")
+```
+
+    ## Confusion Matrix and Statistics
+    ## 
+    ##                     actual_speaker
+    ## predicted_speaker_nb D. Cameron G. Brown
+    ##           D. Cameron         54        0
+    ##           G. Brown           12       34
+    ##                                           
+    ##                Accuracy : 0.88            
+    ##                  95% CI : (0.7998, 0.9364)
+    ##     No Information Rate : 0.66            
+    ##     P-Value [Acc > NIR] : 4.427e-07       
+    ##                                           
+    ##                   Kappa : 0.7537          
+    ##                                           
+    ##  Mcnemar's Test P-Value : 0.001496        
+    ##                                           
+    ##               Precision : 1.0000          
+    ##                  Recall : 0.8182          
+    ##                      F1 : 0.9000          
+    ##              Prevalence : 0.6600          
+    ##          Detection Rate : 0.5400          
+    ##    Detection Prevalence : 0.5400          
+    ##       Balanced Accuracy : 0.9091          
+    ##                                           
+    ##        'Positive' Class : D. Cameron      
+    ## 
+
+``` r
+confusionMatrix(tab_class_lr, mode = "prec_recall")
+```
+
+    ## Confusion Matrix and Statistics
+    ## 
+    ##                     actual_speaker
+    ## predicted_speaker_lr D. Cameron G. Brown
+    ##           D. Cameron         65        5
+    ##           G. Brown            1       29
+    ##                                          
+    ##                Accuracy : 0.94           
+    ##                  95% CI : (0.874, 0.9777)
+    ##     No Information Rate : 0.66           
+    ##     P-Value [Acc > NIR] : 2.279e-11      
+    ##                                          
+    ##                   Kappa : 0.8624         
+    ##                                          
+    ##  Mcnemar's Test P-Value : 0.2207         
+    ##                                          
+    ##               Precision : 0.9286         
+    ##                  Recall : 0.9848         
+    ##                      F1 : 0.9559         
+    ##              Prevalence : 0.6600         
+    ##          Detection Rate : 0.6500         
+    ##    Detection Prevalence : 0.7000         
+    ##       Balanced Accuracy : 0.9189         
+    ##                                          
+    ##        'Positive' Class : D. Cameron     
+    ## 
+
+Based on the F1 score, our logistic regression classifier is performing
+slightly better than predictions from our Naive Bayes classifier, so,
+all else equal we would go with logistic regression.
+
+## Exercises
+
+For this set of exercises we will use the `data_corpus_moviereviews`
+corpus that is stored in **quanteda**. This dataset contains 2000 move
+reviews which are labeled as positive or negative. We’ll try to predict
+these labels using supervised machine learning.
+
+Apply `table()` to the sentiment variable appended to
+`data_corpus_moviereviews` to inspect how many reviews are labelled
+positive and negative.
+
+``` r
+table(docvars(data_corpus_moviereviews, "sentiment"))
+```
+
+    ## 
+    ##  neg  pos 
+    ## 1000 1000
+
+Check the distribution of the number of tokens across reviews by
+applying `ntoken()` to the corpus and then produce a histogram using
+`hist()` .
+
+``` r
+data_corpus_moviereviews %>% 
+    ntoken() %>% 
+    hist()
 ```
 
 ![](Lab_Session_QTA_5_Answers_files/figure-gfm/unnamed-chunk-18-1.png)<!-- -->
 
-Calculate the correlation between nrc.fear and threat, and produce a
-scatterplot
+Tokenise the corpus and save it as `tokens_reviews`.
 
 ``` r
-cor(docvars(speeches_inaugural, "threat"), docvars(speeches_inaugural, "nrc_fear"))
+tokens_reviews <- tokens(data_corpus_moviereviews,
+                         what = "word",
+                         remove_punct = TRUE, 
+                         remove_symbols = TRUE, 
+                         remove_numbers = TRUE,
+                         remove_url = TRUE,
+                         remove_separators = TRUE,
+                         split_hyphens = FALSE,
+                         padding = FALSE) %>%
+  tokens_remove(stopwords("en"))
 ```
 
-    ## [1] 0.08087797
+Create a document-feature matrix and call it `dfm_reviews`
 
 ``` r
-correlation_plot_ <- ggplot(docvars(speeches_inaugural), aes(threat, nrc_fear)) + 
-  geom_point(pch = 21, fill = "gray25", color = "white", size = 2.5) +
-  scale_x_continuous(name = "Threat score") +
-  scale_y_continuous(name = "NRC fear score") +
-  theme_minimal()
-
-print(correlation_plot_)
+dfm_reviews <- dfm(tokens_reviews)
 ```
 
-![](Lab_Session_QTA_5_Answers_files/figure-gfm/unnamed-chunk-19-1.png)<!-- -->
-
-Reflect on these results
+Apply `topfeatures()` to this dfm and get the 50 most frequent features.
 
 ``` r
-#your answer here
+topfeatures(dfm_reviews, n = 50)
 ```
+
+    ##       film        one      movie       like       just       even       good 
+    ##       8874       5526       5446       3555       2901       2556       2323 
+    ##       time        can      story       much       also        get  character 
+    ##       2283       2233       2119       2024       1965       1923       1908 
+    ## characters        two      first        see        way       well       make 
+    ##       1859       1827       1770       1730       1669       1662       1592 
+    ##     really      films     little       life       plot     people        bad 
+    ##       1556       1524       1491       1470       1451       1422       1378 
+    ##      scene      never       best        new        man       many     scenes 
+    ##       1375       1363       1303       1280       1271       1268       1265 
+    ##       know     movies   director      great    another     action       love 
+    ##       1207       1191       1150       1140       1112       1100       1092 
+    ##         go         us  something        end      still       back      seems 
+    ##       1075       1070       1049       1048       1037       1035       1032 
+    ##       made 
+    ##       1027
+
+**Optional** Repeat this step, but get the 25 most frequent features
+from reviews labelled as “pos” and “neg”.
+
+``` r
+topfeatures(dfm_reviews, groups = sentiment, n = 25)
+```
+
+    ## $neg
+    ##       film      movie        one       like       just       even       good 
+    ##       4002       3053       2618       1836       1562       1381       1130 
+    ##       time        can        get        bad       much      story  character 
+    ##       1112       1084       1038       1021        998        905        895 
+    ##       plot characters        two       make      first     really        see 
+    ##        876        873        867        819        806        781        776 
+    ##       also        way     little       well 
+    ##        765        754        722        700 
+    ## 
+    ## $pos
+    ##       film        one      movie       like       just      story       also 
+    ##       4872       2908       2393       1719       1339       1214       1200 
+    ##       good       even       time        can       much  character characters 
+    ##       1193       1175       1171       1149       1026       1013        986 
+    ##       life      first       well        two        see        way        get 
+    ##        983        964        962        960        954        915        885 
+    ##      films       best       many     really 
+    ##        879        810        780        775
+
+## Supervised Machine Learning
+
+Set a seed (`set.seed()`) to ensure reproducibility.
+
+``` r
+set.seed(123)
+```
+
+Create a new dfm with a random sample of 1500 reviews. We will use this
+dfm as a training set. Call it `train_movies_dfm`. Use the sampling code
+we used above.
+
+``` r
+docvars(dfm_reviews, "id") <- 1:ndoc(data_corpus_moviereviews)
+id_train <- sample(1:ndoc(data_corpus_moviereviews), 1500, replace = FALSE)
+
+train_movies_dfm <- dfm_subset(dfm_reviews, id %in% id_train)
+```
+
+Create another dfm with the remaining 500 reviews. Call it
+`test_movies_dfm`. This will be our test set.
+
+``` r
+test_movies_dfm <- dfm_subset(dfm_reviews, !id %in% id_train)
+```
+
+Apply `textmodel_nb()` to the dfm consisting of 1500 documents. Use
+“sentiment” to train the classifier. Call the output `tmod_nb`
+
+``` r
+tmod_nb <- textmodel_nb(train_movies_dfm, 
+                        y =train_movies_dfm$sentiment, 
+                        smooth = 1,
+                        prior = "docfreq",
+                        distribution = "multinomial")
+```
+
+Predict the sentiment of the remaining 500 documents by using
+`predict()`. Call the output `prediction`.
+
+``` r
+prediction <- predict(tmod_nb, newdata = test_movies_dfm, type = "class")
+```
+
+Create a cross-table/confusion matrix to assess the classification
+performance using `table()`.
+
+``` r
+tab_nb <- table(prediction = prediction, 
+                human = docvars(test_movies_dfm, "sentiment"))
+
+print(tab_nb)
+```
+
+    ##           human
+    ## prediction neg pos
+    ##        neg 200  58
+    ##        pos  47 195

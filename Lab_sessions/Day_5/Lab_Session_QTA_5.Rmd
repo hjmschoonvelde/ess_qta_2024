@@ -1,5 +1,5 @@
 ---
-title: "Categorizing text using dictionaries"
+title: "Supervised machine learning"
 output:
   github_document:
   html_document:
@@ -12,263 +12,327 @@ date: "`r format(Sys.time(), '%d %B, %Y')`"
 knitr::opts_chunk$set(echo = TRUE, results = TRUE)
 ```
 
-This document describes how to use dictionary methods in **quanteda**. Let's first load the required libraries. 
+This document walks you through an example of supervised machine learning to predict which UK prime minister delivered a speech. For this we'll use UK prime minister speeches from the [EUSpeech](https://dataverse.harvard.edu/dataverse/euspeech) dataset. 
+
+For the supervised machine learning exercise you will need to install the `quanteda.textmodels`, `quanteda.textplots` and the `quanteda.textstats` libraries. We will also use the `tidyverse` library to create training and test sets. Furthermore, we will use the `caret` library to produce a confusion matrix. This library requires some dependencies (i.e., functions from other libraries), so if you are working from your computer will need install it like so: `install.packages('caret', dependencies = TRUE)`.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
 
+#load libraries
 library(quanteda)
-library(stringr)
+library(quanteda.textmodels)
+library(quanteda.textplots)
+library(quanteda.textstats)
 library(tidyverse)
-library(quanteda.sentiment)
-
+library(caret)
 ```
 
-Let's save the inaugural speeches as an object `speeches_inaugural`
+Let's read in the speeches using the `read.csv()` function. We'll also construct a corpus and select speeches from Gordon Brown and David Cameron.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
 
-speeches_inaugural <- data_corpus_inaugural
+speeches <- read.csv(file = "speeches_uk.csv", 
+                     header = TRUE, 
+                     stringsAsFactors = FALSE, 
+                     sep = ",", 
+                     encoding = "UTF-8")
 
+#construct a corpus
+corpus_pm <- corpus(speeches)
+#select speeches from Cameron and Brown
+corpus_brown_cameron <- corpus_subset(corpus_pm, speaker != "T. Blair")
 ```
 
-We'll first tokenize this corpus and create a dfm
+In a next step, we'll turn the date variable in a date format instead of character format. We can use the `as.Date()` function to convert a character string to a date. %d-%m-%Y is the format of the date in the speeches, denoting day-month-year.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
 
-tokens_inuagural <- tokens(speeches_inaugural,
-                           what = "word",
-                           remove_punct = TRUE, 
-                           remove_symbols = TRUE, 
-                           remove_numbers = FALSE,
-                           remove_url = TRUE,
-                           remove_separators = TRUE,
-                           split_hyphens = FALSE,
-                           padding = FALSE
-                       )
-
-dfm_inaugural <- dfm(tokens_inuagural)
+docvars(corpus_brown_cameron, "date") <- as.Date(docvars(corpus_brown_cameron, "date"), "%d-%m-%Y")
 
 ```
 
-## Off-the shelf dictionaries ##
+Let's tokenise this corpus and create a dfm called dfm_brown_cameron. We'll remove punctuation, symbols, numbers, urls, separators, and split hyphens. We'll also remove stopwords.
 
-**quanteda.sentiment** contains a number of off-the-shelf sentiment dictionaries. Let's take a look at the Lexicoder Sentiment Dictionary from Young and Soroka (2012). It's stored in `quanteda.textmodels` as a dictionary object under `data_dictionary_LSD2015`. 
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+tokens_brown_cameron <- tokens(corpus_brown_cameron,
+                            what = "word",
+                            remove_punct = TRUE, 
+                            remove_symbols = TRUE, 
+                            remove_numbers = TRUE,
+                            remove_url = TRUE,
+                            remove_separators = TRUE,
+                            split_hyphens = FALSE,
+                            padding = FALSE
+                            ) %>%
+  tokens_remove(stopwords("en"))
+
+```
+
+In order to make this dfm less sparse, we will only select features that appear in at least 2% of speeches
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+dfm_brown_cameron <- dfm(tokens_brown_cameron ) %>%
+  dfm_trim(min_docfreq = 0.02, docfreq_type = "prop")
+
+dim(dfm_brown_cameron)
+```
+
+We now have a dfm containing 776 speeches delivered by either Gordon Brown or David Cameron and approximately 4400 tokens. 
+
+## Naive Bayes
+
+Let's see if we can build a classifier to predict if a speech is delivered by Cameron or Brown. First, we'll generate a vector of 250 random numbers selected from the vector 1:776. We'll also append an id variable`id_numeric` to our dfm. 
+
+**NB**: The `set.seed()` function makes sure that you can reproduce your random samples. 
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-summary(data_dictionary_LSD2015)
+#set.seed() allows us to reproduce randomly generated results 
+set.seed(2)
 
-print(data_dictionary_LSD2015, max_nval = 5)
+#generate a sample of 250 numbers without replacement from 1 to 776
 
+id_train <- sample(1:nrow(dfm_brown_cameron), 250, replace = FALSE)
+head(id_train, 10)
+
+#create id variable
+docvars(dfm_brown_cameron, "id_numeric") <- 1:ndoc(dfm_brown_cameron)
+
+#take note of how many speeches were delivered by either Brown or Cameron
+table(docvars(dfm_brown_cameron, "speaker"))
 ```
 
-We can use `dfm_lookup` to apply it to the inaugural speeches:
+We then take a sample of 250 speeches as our training data and turn it into a dfm. The `%in%` operator produces a logical vector of the same length as id_numeric, and contains a TRUE if `id_numeric[i]` appears in id_train and FALSE otherwise. 
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-dfm_inaugural_LSD <- dfm_lookup(dfm_inaugural, 
-                                dictionary = data_dictionary_LSD2015)
+# create a training set: a dfm of 250 documents with row numbers included in id_train
+train_dfm <- dfm_subset(dfm_brown_cameron, id_numeric %in% id_train)
 
-head(dfm_inaugural_LSD)
+#create a test set: a dfm of 100 documents whose row numbers are *not* included in id_train by using the negation operator `!`
+test_dfm <- dfm_subset(dfm_brown_cameron, !id_numeric %in% id_train)
+test_dfm <- dfm_sample(test_dfm, 100, replace = FALSE)
+
+#check whether there is no overlap between the train set and the test set using the which() function
+which((docvars(train_dfm, "id_numeric")  %in% docvars(test_dfm, "id_numeric")))
 ```
-*Question*: The columns that contain negations of positive sentiment and of negative sentiment contain zeroes. Why is this?
 
-We can calculate the relative fraction of negative sentiment tokens to positive sentiment tokens in each speech as follows:
+We can now train a Naive Bayes classifier on the training set using the `textmodel_nb()` function. We'll use the `smooth` argument to apply Laplace smoothing. This is a technique to avoid zero probabilities in the model. The `smooth` argument specifies the smoothing parameter, which is usually set to 1. We'll also use the `prior` argument to specify the prior distribution of the classes; "docfreq" denotes the prior probability of each class is the proportion of documents in the training set that belong to that class. This is the default setting in `textmodel_nb()`. The `distribution` argument specifies the distribution of the features.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-#fraction of negative words
-docvars(dfm_inaugural, "neg_words") <- as.numeric(dfm_inaugural_LSD[,1])
+speaker_classifier_nb <- textmodel_nb(train_dfm, 
+                                      y = docvars(train_dfm, "speaker"), 
+                                      smooth = 1,
+                                      prior = "docfreq",
+                                      distribution = "multinomial")
 
-#fraction of positive words
-docvars(dfm_inaugural, "pos_words") <- as.numeric(dfm_inaugural_LSD[,2])
+summary(speaker_classifier_nb)
 
-#sentiment score
-docvars(dfm_inaugural, "LSD_sentiment")  <-  (docvars(dfm_inaugural, "pos_words") - docvars(dfm_inaugural, "neg_words"))/ntoken(dfm_inaugural)
 
-docvars(dfm_inaugural, c("President", "LSD_sentiment"))
 ```
 
-Let's do the same, but this time with the NRC Word-Emotion Association Lexicon
+Let's analyze if we can predict whether a speech in the test set is from Cameron or Brown in our test set. We'll use the `predict()` function to predict the class of the test
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-dfm_inaugural_NRC <- dfm_lookup(dfm_inaugural, 
-                                dictionary = data_dictionary_NRC)
+#Naive Bayes can only take features that occur both in the training set and the test set. We can make the features identical by passing train_dfm to dfm_match() as a pattern.
 
+matched_dfm <- dfm_match(test_dfm, features = featnames(train_dfm))
 
-#fraction of negative words (NB: located in the 6th column in the dfm)
-docvars(dfm_inaugural, "neg_NRC_words") <- as.numeric(dfm_inaugural_NRC[,6])
+#predict speaker 
+pred_speaker_classifier_nb <- predict(speaker_classifier_nb, 
+                                      newdata = matched_dfm, 
+                                      type = "class")
 
-#fraction of positive words (NB: located in the 7th column in the dfm)
-docvars(dfm_inaugural, "pos_NRC_words") <- as.numeric(dfm_inaugural_NRC[,7])
-
-#sentiment score
-docvars(dfm_inaugural, "NRC_sentiment")  <- (docvars(dfm_inaugural, "pos_NRC_words") - docvars(dfm_inaugural, "neg_NRC_words"))/ntoken(dfm_inaugural)
-
-head(docvars(dfm_inaugural, c("President", "NRC_sentiment")))
-```
-
-Let's plot the correlation
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-cor(docvars(dfm_inaugural, "LSD_sentiment"), docvars(dfm_inaugural, "NRC_sentiment"))
-
-correlation_plot_LSD_NRC <- ggplot(docvars(dfm_inaugural), aes(LSD_sentiment, NRC_sentiment)) + 
-  geom_point(pch = 21, fill = "gray25", color = "white", size = 2.5) +
-  scale_x_continuous(name = "NRC sentiment") +
-  scale_y_continuous(name = "LSD sentiment") +
-  theme_minimal()
-
-print(correlation_plot_LSD_NRC)
+head(pred_speaker_classifier_nb)
 
 ```
 
-The correlation of 0.76 is pretty good since both measures intend to capture the same construct 
-
-As a last step we'll inspect if Presidents make use of narrative arches in their speeches. For example, they may start a speech more subdued and end on a more positive note. Or they may start positive and end positive. Let's first create a paragraph-based dfm of Obama's inaugural speeches
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-obama_corpus <- corpus_subset(speeches_inaugural, President == "Obama") %>%
-  corpus_reshape(to =  "paragraph")
-
-ndoc(obama_corpus)
-
-obama_tokens <- tokens(obama_corpus,
-                           what = "word",
-                           remove_punct = TRUE, 
-                           remove_symbols = TRUE, 
-                           remove_numbers = FALSE,
-                           remove_url = TRUE,
-                           remove_separators = TRUE,
-                           split_hyphens = FALSE,
-                           padding = FALSE
-                       )
-
-obama_dfm <- dfm(obama_tokens)
-
-```
-
-Let's apply the NRC dictionary to this dfm
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-obama_dfm_NRC <- dfm_lookup(obama_dfm, 
-                                dictionary = data_dictionary_NRC)
-
-docvars(obama_dfm, "neg_words") <- as.numeric(obama_dfm_NRC[,6])
-
-docvars(obama_dfm, "pos_words") <- as.numeric(obama_dfm_NRC[,7])
-
-#sentiment score
-docvars(obama_dfm, "NRC_sentiment")  <-  (docvars(obama_dfm, "pos_words") - docvars(obama_dfm, "neg_words"))/nfeat(obama_dfm)
-```
-
-Let's plot this
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-table(docvars(obama_dfm, "Year"))
-
-docvars(obama_dfm, "sentence") <- NA
-docvars(obama_dfm, "sentence")[1:36] <- 1:36
-docvars(obama_dfm, "sentence")[37:65] <- 1:29
-
-obama_plot <- ggplot(docvars(obama_dfm), aes(sentence, NRC_sentiment)) + 
-  geom_smooth() +
-  scale_x_continuous(name = "Sentence") +
-  scale_y_continuous(name = "NRC sentiment") +
-  theme_minimal() + facet_grid(~Year)
-
-print(obama_plot)
-```
-
-## Self made dictionaries
-
-When working with your own dictionary, most of the work will go into evaluating its validity and reliability in order to make sure that it captures the construct that you are looking for. However, once you have settled on a dictionary, it is easy in **quanteda** to apply it to a corpus. 
-
-Let's say where are interested in how often these presidents refer to the economy
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-#create a dictionary
-econ_dict <- dictionary(list(Economy = c("econ*", "job*", "employ*", "industr*", "business*", "market*")))
-
-econ_dict_dfm <- dfm_lookup(dfm_inaugural, 
-                            dictionary = econ_dict)
-
-dim(econ_dict_dfm)
-head(econ_dict_dfm)
-```
-
-
-If we want to average the average number of mentions per speaker we can save these dictionary results as a variable in our corpus object. Let's call it `economy`.
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-docvars(speeches_inaugural, "economy") <- as.numeric(econ_dict_dfm) / ntoken(dfm_inaugural)
-
-
-lineplot_economy <- ggplot(docvars(speeches_inaugural),
-                                aes(x = Year, y = economy)) +
-  geom_smooth() + theme_minimal()
-
-
-print(lineplot_economy)
-
-```
-
-
-
-## Excercise
-
-Create a dictionary titled `threat_dictionary`, with threat as a key and threat, peril, risk, danger as values
-
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-#your answer here
-```
-
-Apply this dictionary to `dfm_inaugural` and call the resulting object `dfm_inaugural_threat`. Append the results in the docvars of `speeches_inaugural` as a variable `threat` containing the fraction of threat words in each speech
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-#your answer here
-```
-
-Plot the fraction of threat words over time
+We could also predict the probability the model assigns to each class. We could use this to create an ROC curve.
 
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-#your answer here
+#predict probability of speaker
+pred_prob_classifier_nb <- predict(speaker_classifier_nb, 
+                                   newdata = matched_dfm, 
+                                   type = "probability")
 ```
 
-Apply the NRC emotion detection lexicon to `dfm_inaugural` and append a varioble called nrc_fear as metadata to `speeches_inaugural` that contains the fraction of NRC fear words in each speech.
+Let's see how well our classifier did by producing a confusion matrix. A confusion matrix is a table that is often used to describe the performance of a classification model on a set of test data for which the true values are known.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-#your answer here
+tab_class_nb <- table(predicted_speaker_nb = pred_speaker_classifier_nb, 
+                      actual_speaker = docvars(test_dfm, "speaker"))
+
+print(tab_class_nb)
 ```
 
-Plot the fraction of fear words over time
+So it appears we are somewhat successful at predicting whether a speech is delivered by Cameron or Brown. Our accuracy is 90%. 
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-#your answer here
-
-```
-
-Calculate the correlation between nrc.fear and threat, and produce a scatterplot
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-#your answer here
-
-```
-
-Reflect on these results
+Let's have a look at the most predictive features for Cameron in the complete corpus.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-#your answer here
+dfm_brown_cameron_grouped <- tokens_brown_cameron %>%
+  tokens_group(groups = speaker) %>%
+  dfm()
+
+keyness <- textstat_keyness(dfm_brown_cameron_grouped, target = "D. Cameron")
+textplot_keyness(keyness)
+
+
 ```
+
+We can also display the most occurring features for Brown and Cameron but without account for their `keyness`:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+topfeatures(dfm_brown_cameron, groups = speaker, n = 50)
+```
+
+In order to improve on our predictions, we may think of other ways to represent our documents. A common approach is to produce a feature-weighted dfm by calculating the term-frequency-inverse document frequency (tfidf) for each token. The intuition behind this transformation is that it gives a higher weight to tokens that occur often in a particular document but not much in other documents, comppared to tokens that occur often in a particular document but also in other documents. Tf-idf weighting is done through `dfm_tfidf()`. 
+
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+train_dfm_weighted <- dfm_tfidf(train_dfm)
+matched_dfm_weighted <- dfm_tfidf(matched_dfm)
+
+speaker_classifier_weighted_nb <- textmodel_nb(train_dfm_weighted, 
+                                               y = docvars(train_dfm_weighted, "speaker"), 
+                                               smooth = 1,
+                                               prior = "docfreq",
+                                               distribution = "multinomial")
+
+pred_speaker_classifier_weigthed_nb <- predict(speaker_classifier_weighted_nb, 
+                                               newdata = matched_dfm_weighted, 
+                                               type = "class")
+
+tab_class_weighted_nb <- table(predicted_speaker_nb = pred_speaker_classifier_weigthed_nb, 
+                               actual_speaker = docvars(test_dfm, "speaker"))
+
+print(tab_class_weighted_nb)
+```
+
+We'll, we actually did a bit worse this time.  Let's see if we can improve our predictions by using a different classifier.
+
+## Logistic regression
+
+Let's try a different classifier, a logistic regression. This regression is not any different a logistic regression you may have come across estimating a regression model for a binary dependent variable, but this time we use it solely for prediction purposes. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+
+speaker_classifier_lr <- textmodel_lr(train_dfm, 
+                                      y = docvars(train_dfm, "speaker"))
+
+#predict speaker 
+pred_speaker_classifier_lr <- predict(speaker_classifier_lr, 
+                                   newdata = matched_dfm, 
+                                   type = "class")
+
+#confusion matrix
+tab_class_lr <- table(predicted_speaker_lr = pred_speaker_classifier_lr, 
+                       actual_speaker = docvars(test_dfm, "speaker"))
+print(tab_class_lr)
+```
+
+We now need to decide which of these classifiers works best for us. As discussed in class we would need to check precision, recall and F1 scores. The `confusionMatrix()` function in the `caret` package does exactly that. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+confusionMatrix(tab_class_nb, mode = "prec_recall")
+
+confusionMatrix(tab_class_lr, mode = "prec_recall")
+
+```
+
+Based on the F1 score, our logistic regression classifier is performing slightly better than predictions from our Naive Bayes classifier, so, all else equal we would go with logistic regression. 
+
+## Exercises
+
+For this set of exercises we will use the `data_corpus_moviereviews` corpus that is stored in **quanteda**. This dataset contains 2000 move reviews which are labeled as positive or negative. We'll try to predict these labels using supervised machine learning. 
+
+Apply `table()` to the sentiment variable appended to `data_corpus_moviereviews` to inspect how many reviews are labelled positive and negative.
+
+```{r}
+
+```
+
+Check the distribution of the number of tokens across reviews by applying `ntoken()` to the corpus and then produce a histogram using `hist()` .  
+```{r}
+
+```
+
+
+Tokenise the corpus and save it as `tokens_reviews`. 
+
+```{r}
+
+```
+
+Create a document-feature matrix and call it `dfm_reviews`
+
+```{r}
+
+```
+
+Apply `topfeatures()` to this dfm and get the 50 most frequent features.
+
+```{r}
+
+```
+
+**Optional** Repeat this step, but get the 25 most frequent features from reviews labelled as "pos" and "neg".
+
+
+```{r}
+
+```
+
+
+## Supervised Machine Learning
+
+Set a seed (`set.seed()`) to ensure reproducibility. 
+
+```{r}
+
+```
+
+Create a new dfm with a random sample of 1500 reviews. We will use this dfm as a training set. Call it `train_movies_dfm`. Use the sampling code we used above. 
+
+
+```{r}
+
+```
+
+Create another dfm with the remaining 500 reviews. Call it `test_movies_dfm`. This will be our test set.
+
+
+```{r}
+
+```
+
+Apply `textmodel_nb()` to the dfm consisting of 1500 documents. Use "sentiment" to train the classifier. Call the output `tmod_nb`
+
+```{r}
+
+```
+
+Predict the sentiment of the remaining 500 documents by using `predict()`. Call the output `prediction`.
+
+
+```{r}
+
+```
+
+Create a cross-table/confusion matrix to assess the classification performance using `table()`. 
+
+```{r}
+
+```
+
+

@@ -18,7 +18,7 @@ To facilitate communication and interaction throughout the course we will make u
 | July  10   | [.pdf](Slides/Slides_QTA_2.pdf)| July  17   | [.pdf]() |
 | July  11   | [.pdf](Slides/Slides_QTA_3.pdf) | July  18   | [.pdf]() |
 | July  12   | [.pdf](Slides/Slides_QTA_4.pdf)| July  10   |[.pdf]() |
-| July  15   | [.pdf]()| July  21   | [.pdf]() |
+| July  15   | [.pdf]( Slides/Slides_QTA_5.pdf)| July  21   | [.pdf]() |
 
 
 ## Lab Sessions
@@ -29,7 +29,7 @@ To facilitate communication and interaction throughout the course we will make u
 | July  10   | [.md]( Lab_sessions/Day_2/Lab_Session_QTA_2.md ) [.Rmd]( Lab_sessions/Day_2/Lab_Session_QTA_2.Rmd )  | [.md]( Lab_sessions/Day_2/Lab_Session_QTA_2_Answers.md ) [.Rmd]( Lab_sessions/Day_2/Lab_Session_QTA_2_Answers.Rmd ) |
 | July  11   | [.md]( Lab_sessions/Day_3/Lab_Session_QTA_3.md ) [.Rmd]( Lab_sessions/Day_3/Lab_Session_QTA_3.Rmd )  | [.md]( Lab_sessions/Day_3/Lab_Session_QTA_3_Answers.md ) [.Rmd]( Lab_sessions/Day_3/Lab_Session_QTA_3_Answers.Rmd ) |
 | July  12   | [.md]( Lab_sessions/Day_4/Lab_Session_QTA_4.md ) [.Rmd]( Lab_sessions/Day_4/Lab_Session_QTA_4.Rmd )  | [.md]( Lab_sessions/Day_4/Lab_Session_QTA_4_Answers.md ) [.Rmd]( Lab_sessions/Day_4/Lab_Session_QTA_4_Answers.Rmd ) |
-| July  15   | [.md]() [.Rmd]() | [.md]() [.Rmd]() |
+| July  15   | [.md]( Lab_sessions/Day_5/Lab_Session_QTA_5.md ) [.Rmd]( Lab_sessions/Day_5/Lab_Session_QTA_5.Rmd )  | [.md]( Lab_sessions/Day_5/Lab_Session_QTA_5_Answers.md ) [.Rmd]( Lab_sessions/Day_5/Lab_Session_QTA_5_Answers.Rmd ) |
 | July  16   | [.md]() [.Rmd]() | [.md]() [.Rmd]() |
 | July  17   | [.md]() [.Rmd]() | [.md]() [.Rmd]() |
 | July  18   | [.md]() [.Rmd]() | [.md]() [.Rmd]() |
