@@ -236,12 +236,15 @@ Create a dictionary titled `threat_dictionary`, with threat as a key and threat,
 
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-threat_dict <- dictionary(list(threat = c("threat", "peril*", "risk", "danger*")))
+
+threat_dict <- dictionary(list(threat = c("threat*", "peril*", "risk*", "danger*")))
+
 ```
 
 Apply this dictionary to `dfm_inaugural` and call the resulting object `dfm_inaugural_threat`. Append the results in the docvars of `speeches_inaugural` as a variable `threat` containing the fraction of threat words in each speech
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
 dfm_inaugural_threat <- dfm_lookup(dfm_inaugural, 
                                 dictionary = threat_dict)
 
@@ -290,11 +293,11 @@ Calculate the correlation between nrc.fear and threat, and produce a scatterplot
 
 cor(docvars(speeches_inaugural, "threat"), docvars(speeches_inaugural, "nrc_fear"))
 
-correlation_plot_ <- ggplot(docvars(speeches_inaugural), aes(threat, nrc_fear)) + 
+correlation_plot_ <- ggplot(docvars(speeches_inaugural), aes(threat, nrc_fear, label = President)) + 
   geom_point(pch = 21, fill = "gray25", color = "white", size = 2.5) +
   scale_x_continuous(name = "Threat score") +
   scale_y_continuous(name = "NRC fear score") +
-  theme_minimal()
+  theme_minimal() + geom_text(hjust=0, vjust=0)
 
 print(correlation_plot_)
 
@@ -306,3 +309,39 @@ Reflect on these results
 
 #your answer here
 ```
+
+
+Let's save speeches_inaugural as a character vector called speeches_inaugural_text. We will also save the fear words from the NRC dictionary as a character vector called fear_words.
+
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+speeches_inaugural_text <- as.character(speeches_inaugural)
+
+fear_words <- data_dictionary_NRC$fear
+threat_words <- threat_dict$threat
+
+```
+
+Use the stringr package to asses for each speech which fear words from fear_words appear in that speech.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+speeches_inaugural_fear <- str_extract_all(speeches_inaugural_text, paste(fear_words, collapse = "|"))
+speeches_inaugural_threat <- str_extract_all(speeches_inaugural_text, paste(threat_words, collapse = "|"))
+
+```
+
+We have now created two lists with fear and threat for each speech. In a next step we'll assess which fear and threat words both appear in each speech. Well use the map2 function from the purrr package to do this. Map2 takes two lists and applies a function to each element of the lists. In this case we'll use the intersect function to find the words that appear in both lists.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+speeches_inaugural_fear_threat <- map2(speeches_inaugural_fear, speeches_inaugural_threat, intersect)
+
+```
+
+
+
+
+
+
