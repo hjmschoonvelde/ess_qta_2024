@@ -1,5 +1,5 @@
 ---
-title: "Supervised machine learning"
+title: "QTA Day 6: Scaling methods"
 output:
   github_document:
   html_document:
@@ -12,311 +12,477 @@ date: "`r format(Sys.time(), '%d %B, %Y')`"
 knitr::opts_chunk$set(echo = TRUE, results = TRUE)
 ```
 
-This document walks you through an example of supervised machine learning to predict which UK prime minister delivered a speech. For this we'll use UK prime minister speeches from the [EUSpeech](https://dataverse.harvard.edu/dataverse/euspeech) dataset. 
+This document gives some examples of how to apply scaling methods (Wordscores, Wordfish, LSS) in **quanteda**. For these examples, we use the (English) speeches of EP group leaders that are part of the [EUSpeech](https://dataverse.harvard.edu/dataverse/euspeech) dataset. 
 
-For the supervised machine learning exercise you will need to install the `quanteda.textmodels`, `quanteda.textplots` and the `quanteda.textstat` libraries We will also use the `tidyverse` library to create training and test sets. Furthermore, we will use the `caret` library to produce a confusion matrix. This library requires some dependencies (i.e., functions from other libraries), so if you are working from your computer will need install it like so: `install.packages('caret', dependencies = TRUE)`.
+The **quanteda**, **quanteda.textmodels**, **quanteda.textstats**, **quanteda.textplots**, **ggplot2** and **tidyverse** packages are familiar at this point. The **quanteda.corpora** package can be downloaded as follows: `devtools::install_github("quanteda/quanteda.corpora")`. The **LSX** package can be downloaded using `install.packages("LSX")`
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+```{r, echo = TRUE, results = 'verbatim', warning = FALSE, message = FALSE}
 
 #load libraries
 library(quanteda)
 library(quanteda.textmodels)
 library(quanteda.textplots)
+library(quanteda.corpora)
 library(quanteda.textstats)
+library(ggplot2)
 library(tidyverse)
-library(caret)
+library(LSX)
 
-#read in speeches
-speeches <- read.csv(file = "speeches_uk.csv", 
+#read in the EP speeches
+speeches <- read.csv(file = "speeches_ep.csv", 
                      header = TRUE, 
                      stringsAsFactors = FALSE, 
                      sep = ",", 
                      encoding = "UTF-8")
 
-#construct a corpus
-corpus_pm <- corpus(speeches)
-#select speeches from Cameron and Brown
-corpus_brown_cameron <- corpus_subset(corpus_pm, speaker != "T. Blair")
-#turn the date variable in a date format instead of character format
-docvars(corpus_brown_cameron, "date") <- as.Date(docvars(corpus_brown_cameron, "date"), "%d-%m-%Y")
 ```
 
-Let's tokenise this corpus and create a dfm
+Inspect  how many unique speakers there are in the dataset.
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-tokens_brown_cameron <- tokens(corpus_brown_cameron,
-                            what = "word",
-                            remove_punct = TRUE, 
-                            remove_symbols = TRUE, 
-                            remove_numbers = TRUE,
-                            remove_url = TRUE,
-                            remove_separators = TRUE,
-                            split_hyphens = FALSE,
-                            padding = FALSE
-                            ) %>%
-  tokens_remove(stopwords("en"))
+```{r, echo = TRUE, results = 'verbatim', warning = FALSE, message = FALSE}
 
-#to make this dfm less sparse, we will only select features that appear in at least 2% of speeches
-dfm_brown_cameron <- dfm(tokens_brown_cameron ) %>%
-  dfm_trim(min_docfreq = 0.02, docfreq_type = "prop")
-    
+unique(speeches$speaker)
 
-dim(dfm_brown_cameron)
 ```
 
-We now have a dfm containing 776 speeches delivered by either Gordon Brown or David Cameron and 4375 tokens. 
+Let's first merge the speeches for each speaker using some tidyverse data-wrangling. The %>%, group_by(), summarise() and ungroup() functions are used to concatenate the speeches for each speaker. The `%>%` command is the pipe function and helps us with a chain of functions. Think of it as a way to pass the output of one function to the next function. The paste() function concatenates the speeches for each speaker.
 
-## Naive Bayes
+```{r, echo = TRUE, results = 'verbatim', warning = FALSE, message = FALSE}
 
-Let's see if we can build a classifier to predict if a speech is delivered by Cameron or Brown. First, we'll generate a vector of 250 random numbers selected from the vector 1:776. We'll also append an id variable`id_numeric` to our dfm. **NB**: The `set.seed()` function makes sure that you can reproduce your random samples. 
+speeches <- speeches %>%
+  group_by(speaker) %>%
+  summarise(text = paste(text, collapse = " ")) %>%
+  ungroup()
+
+#confirm that you have a total of 20 (very long) concatenated speeches, 1 for each EP speaker
+dim(speeches)
+
+```
+
+Let's create a corpus and tokenize it. We will remove punctuation, symbols, numbers, urls, and separators. We will also remove stopwords and split hyphens.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+#create a corpus object
+
+corpus_speeches <- corpus(speeches,
+                          text_field = "text")
+
+#tokenise the corpus
+tokens_speeches <- tokens(corpus_speeches,
+                          what = "word",
+                          remove_punct = TRUE, 
+                          remove_symbols = TRUE, 
+                          remove_numbers = TRUE,
+                          remove_url = TRUE,
+                          remove_separators = TRUE,
+                          split_hyphens = FALSE,
+                          ) %>%
+  tokens_remove(stopwords(source = "smart"), padding = TRUE)
+
+```
+
+MEP speeches are full of jargon and references to politicians. Let's append bigram collocations to our tokens object to account for this. 
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-#set.seed() allows us to reproduce randomly generated results 
-set.seed(2)
+collocations <- tokens_speeches %>%
+  tokens_sample(size = 10, replace = FALSE) %>%
+  textstat_collocations(min_count = 20,
+                        size = 2:3) %>%
+  arrange(-lambda)
 
-#generate a sample of 250 numbers without replacement
-id_train <- sample(1:nrow(dfm_brown_cameron), 250, replace = FALSE)
-head(id_train, 10)
-
-#create id variable
-docvars(dfm_brown_cameron, "id_numeric") <- 1:ndoc(dfm_brown_cameron)
-
-#take note of how many speeches were delivered by either Brown or Cameron
-table(docvars(dfm_brown_cameron, "speaker"))
-```
-
-We then take a sample of 250 speeches as our training data and turn it into a dfm. The `%in%` operator produces a logical vector of the same length as id_numeric, and contains a TRUE if `id_numeric[i]` appears in id_train and FALSE otherwise. 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-# create a training set: a dfm of 250 documents with row numbers included in id_train
-train_dfm <- dfm_subset(dfm_brown_cameron, id_numeric %in% id_train)
-
-#create a test set: a dfm of 100 documents whose row numbers are *not* included in id_train
-test_dfm <- dfm_subset(dfm_brown_cameron, !id_numeric %in% id_train)
-test_dfm <- dfm_sample(test_dfm, 100, replace = FALSE)
-
-#check whether there is no overlap between the train set and the test set
-which((docvars(train_dfm, "id_numeric")  %in% docvars(test_dfm, "id_numeric")))
-```
-
-We can now train a Naive Bayes classifier on the training set using the `textmodel_nb()` function
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-speaker_classifier_nb <- textmodel_nb(train_dfm, 
-                                      y = docvars(train_dfm, "speaker"), 
-                                      smooth = 1,
-                                      prior = "docfreq",
-                                      distribution = "multinomial")
-
-summary(speaker_classifier_nb)
-
+head(collocations, 20)
 
 ```
 
-Let's analyze if we can predict whether a speech in the test set is from Cameron or Brown:
+Let's also append collocations of names to our tokens object. 
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-#Naive Bayes can only take features that occur both in the training set and the test set. We can make the features identical by passing train_dfm to dfm_match() as a pattern.
+collocations_names <- tokens_select(tokens_speeches, 
+                                    pattern = "[A-Z]", 
+                                    valuetype = "regex", 
+                                    case_insensitive = FALSE, 
+                                    padding = TRUE) %>%
+  textstat_collocations(min_count = 10,
+                        tolower = FALSE)
 
-matched_dfm <- dfm_match(test_dfm, features = featnames(train_dfm))
-
-#predict speaker 
-pred_speaker_classifier_nb <- predict(speaker_classifier_nb, 
-                                      newdata = matched_dfm, 
-                                      type = "class")
-
-head(pred_speaker_classifier_nb)
+head(collocations_names, 20)
 
 ```
 
-We could also predict the probability the model assigns to each class. We could use this to create an ROC curve.
-
+If we want to add the most surprising collocations to our tokens object we can do so using `tokens_compund`. We'll include only collocations with a lambda score higher than 5.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+collocations <- collocations %>%
+  filter(lambda > 5) %>%
+  pull(collocation) %>%
+  phrase()
 
-#predict probability of speaker
-pred_prob_classifier_nb <- predict(speaker_classifier_nb, 
-                                   newdata = matched_dfm, 
-                                   type = "probability")
+tokens_speeches <- tokens_compound(tokens_speeches, collocations)
+
+collocations_names <- collocations_names %>%
+  filter(lambda > 5) %>%
+  pull(collocation) %>%
+  phrase()
+
+tokens_speeches <- tokens_compound(tokens_speeches, collocations_names)
+
 ```
 
-Let's see how well our classifier did by producing a confusion matrix
+Create a dfm, and change the document names to the speaker names.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-tab_class_nb <- table(predicted_speaker_nb = pred_speaker_classifier_nb, 
-                      actual_speaker = docvars(test_dfm, "speaker"))
 
-print(tab_class_nb)
+dfm_speeches <- dfm(tokens_speeches)
+docnames(dfm_speeches) <- docvars(dfm_speeches, "speaker")
 ```
 
-So it appears we are somewhat successful at predicting whether a speech is delivered by Cameron or Brown. Our accuracy is 90%. 
+## Wordscores 
 
-Let's have a look at the most predictive features for Cameron in the complete corpus.
+Let's see if we can use Wordscores to locate these speakers on a pro-anti EU dimension. We'll first need to determine reference texts to anchor this dimension. On the anti-EU side we'll locate Francesco Speroni and Nigel Farage, leaders of the then European Freedom and Democracy group, a Eurosceptic outlet. On the pro-EU dimension we'll locate Guy Verhofstadt, leader of the liberal ALDE group, and a pro-EU voice, as well as Rebecca Harms, the leader of the Greens:
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-dfm_brown_cameron_grouped <- tokens_brown_cameron %>%
-  tokens_group(groups = speaker) %>%
+#append an empty reference_score variable to the speeches_dfm docvars
+docvars(dfm_speeches, "reference_score") <- NA
+
+#locate which rows correspond with Guy Verhofstadt and Rebecca Harms (pro_eu) and Francesco Speroni and Nigel Farage (anti_eu)
+pro_eu <- which(docvars(dfm_speeches) == "Guy Verhofstadt" | docvars(dfm_speeches) == "Rebecca Harms")
+anti_eu <- which(docvars(dfm_speeches) == "Francesco Speroni" |
+                 docvars(dfm_speeches) == "Nigel Farage" )
+
+#assign reference scores to Guy Verhofstadt and Rebecca Harms (1) and Francesco Speroni and Nigel Farage (-1)
+docvars(dfm_speeches, "reference_score")[pro_eu] <- 1
+docvars(dfm_speeches, "reference_score")[anti_eu] <- -1
+
+#inspects the reference_score variable:
+docvars(dfm_speeches, "reference_score")
+
+#implement wordscores as per Laver, Benoit, Garry (2003)
+speeches_ws <- textmodel_wordscores(dfm_speeches, 
+                                    y = docvars(dfm_speeches, "reference_score"), 
+                                    scale = c("linear"), 
+                                    smooth = 1)
+summary(speeches_ws, 10)
+
+#sort most discriminant words:
+
+#anti-EU words
+head(sort(speeches_ws$wordscores), 10)
+
+#pro-EU words
+tail(sort(speeches_ws$wordscores), 10)
+
+#histogram of wordscores
+hist(speeches_ws$wordscore, col = "red", border = 0)
+
+```
+
+Let's use the Wordscores model to predict the document scores of the speeches of the remaining group leaders
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+speeches_wordscores_predict <- predict(speeches_ws,
+                                       newdata = dfm_speeches, 
+                                       se = TRUE)
+
+```
+
+Which speakers are most like Farage and Speroni?
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+sort(speeches_wordscores_predict$fit, decreasing = FALSE)[1:5]
+```
+
+This lists Kathy Sinnott (I&D), Martin Callanan (ECR) and Syed Kamall (ECR) as the most anti-EU speakers.
+
+Which speakers are most like Verhofstadt and Harms?
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+sort(speeches_wordscores_predict$fit, decreasing = TRUE)[1:5]
+```
+This lists Joseph Daul (EPP), Lothar Bisky (Party of the European Left) and Monica Frassoni (Green Party) as the most pro-EU speakers.
+
+Visualize the document scores in a plot:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+textplot_scale1d(speeches_wordscores_predict)
+
+```
+
+
+## Wordfish
+
+Estimate a Wordfish model and inspect its output. Using the argument `dir=c(4,8)` set the direction of the dimension so that the document score for Francesco Speroni (speaker 4) is smaller than the document score for Guy Verhofdstadt (speaker 8)
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+speeches_wf <- textmodel_wordfish(dfm_speeches,
+                                  dir = c(4,8))
+summary(speeches_wf)
+
+```
+
+Let's take out the word level parameters beta and psi. Beta is the estimated word position on the underlying dimension and psi is the word fixed effect.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+wordfish_word_data <- data.frame(beta = speeches_wf$beta,
+                            psi = speeches_wf$psi,
+                            features = speeches_wf$features)
+
+dim(wordfish_word_data)
+head(wordfish_word_data)
+
+word_plot <- ggplot(data = wordfish_word_data, aes(x = beta, y = psi)) +
+    geom_point(pch = 21, fill = "gray", color = "white", size = 0.75) +
+  labs(x = "Beta", y = "Psi") + guides(size = "none", color = guide_legend("")) + 
+  theme_minimal() +
+  geom_text(data=subset(wordfish_word_data, beta > 7 | beta < -4.5 | psi > 4.5),  
+            aes(x = beta, y = psi, label = features))
+
+print(word_plot)
+```
+
+
+Plot the document positions generated by Wordfish. Alpha is the document position on the dimension and theta is the document fixed effect.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+#generate a dataframe with document level alpha beta and omega
+wordfish_document_data <- data.frame(alpha = speeches_wf$alpha,
+                                     theta = speeches_wf$theta,
+                                     se = speeches_wf$se.theta,
+                                     speaker = speeches_wf$docs)
+
+#order the speaker factor by theta
+wordfish_document_data$speaker <- reorder(wordfish_document_data$speaker, 
+                                           wordfish_document_data$theta)
+
+
+#plot wordfish results using ggplot2
+wordfish_plot <- ggplot(wordfish_document_data, 
+                        aes(x= speaker, 
+                            y = theta,
+                            ymin = theta -1.96*se,
+                            ymax = theta + 1.96*se)) +
+  geom_pointrange(fill = "gray", color = "gray", size = .5) +
+  theme_minimal() + coord_flip()
+print(wordfish_plot)
+
+```
+
+Both Wordscores and Wordfish are scaling models and if they pick up on the same dimension they should give us similar results. Let's see if this indeed the case. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+scaling_data <- rbind(data.frame(speeches_wordscores_predict, wordfish_document_data))
+
+scaling_plot <- ggplot(scaling_data, aes(x = fit, 
+                                         y = theta, 
+                                         label = speaker)) +
+  geom_point(pch = 21, fill = "gray25", color = "white", size = 2.5) +
+  scale_x_continuous(name = "Wordscore prediction") +
+  scale_y_continuous(name = "Wordfish prediction") +
+  theme_minimal() + geom_text(aes(label=speaker), 
+                                        hjust=0, 
+                                        vjust=0, 
+                                        size = 2)
+  
+print(scaling_plot)
+
+correlation <- cor.test(x=scaling_data$fit, 
+                        y=scaling_data$theta,
+                        method = 'pearson')
+print(correlation)
+```
+
+## Latent semantic scaling (LSS)
+
+In a third step, we'll apply Latent Semantic Scaling (LSS) to the speeches. LSS is a scaling method that uses a seed list of sentiment words as a starting point. It then relies on word embeddings to find nearest neighbors to these seed words. From this information it calculates `polarity scores` for each word.
+
+In order to apply LSS to the corpus we first need to transform the corpus at the sentence level and tokenize it
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+corpus_speeches_sent <- corpus_reshape(corpus_speeches, to =  "sentences")
+
+tokens_speeches_sent <- tokens(corpus_speeches_sent,
+                               what = "word",
+                               remove_punct = TRUE, 
+                               remove_symbols = TRUE, 
+                               remove_numbers = TRUE,
+                               remove_url = TRUE,
+                               remove_separators = TRUE,
+                               split_hyphens = FALSE,
+                          ) %>%
+  tokens_remove(stopwords(source = "smart"), padding = FALSE)
+
+
+tokens_speeches_sent <- tokens_compound(tokens_speeches_sent, collocations)
+tokens_speeches_sent <- tokens_compound(tokens_speeches_sent, collocations_names)
+
+dfmat_speeches_sent <- tokens_speeches_sent %>% 
   dfm()
 
-keyness <- textstat_keyness(dfm_brown_cameron_grouped, target = "D. Cameron")
-textplot_keyness(keyness)
-
+topfeatures(dfmat_speeches_sent, 20)
 
 ```
 
-We can also display the most occurring features for Brown and Cameron but without account for their `keyness`:
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-topfeatures(dfm_brown_cameron, groups = speaker, n = 50)
-```
-
-As you can see, it seems predictive features mostly indicate different topics.  
-
-
-In order to improve on our predictions, we may think of other ways to represent our documents. A common approach is to produce a feature-weighted dfm by calculating the term-frequency-inverse document frequency (tfidf) for each token. The intuition behind this transformation is that it gives a higher weight to tokens that occur often in a particular document but not much in other documents, comppared to tokens that occur often in a particular document but also in other documents. Tf-idf weighting is done through `dfm_tfidf()`. 
-
+In this case we rely on the short list of sentiment words as a seed list
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-train_dfm_weighted <- dfm_tfidf(train_dfm)
-matched_dfm_weighted <- dfm_tfidf(matched_dfm)
+seed <- as.seedwords(data_dictionary_sentiment)
+print(seed)
 
-speaker_classifier_weighted_nb <- textmodel_nb(train_dfm_weighted, 
-                                               y = docvars(train_dfm_weighted, "speaker"), 
-                                               smooth = 1, #laplace smoothing as discussed in the lecture
-                                               prior = "docfreq",
-                                               distribution = "multinomial")
-
-pred_speaker_classifier_weigthed_nb <- predict(speaker_classifier_weighted_nb, 
-                                               newdata = matched_dfm_weighted, 
-                                               type = "class")
-
-tab_class_weighted_nb <- table(predicted_speaker_nb = pred_speaker_classifier_weigthed_nb, 
-                               actual_speaker = docvars(test_dfm, "speaker"))
-
-print(tab_class_weighted_nb)
 ```
 
-We'll, we actually did a bit worse this time.  
-
-## Logistic regression
-
-Let's try a different classifier, a logistic regression. This regression is not any different a logistic regression you may have come across estimating a regression model for a binary dependent variable, but this time we use it solely for prediction
+Using the seed words, LSS computes polarity of words frequent in the context of `europe*` (which in this example should denote how positive or negative words are around references of membership). We'll set the p-value to 0.05, which means that only words that are significantly more frequent in the context of `europe*` than in the rest of the corpus will be included in the analysis.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
+# identify context words 
+europe <- char_context(tokens_speeches_sent, pattern = "europe*", p = 0.05)
 
-speaker_classifier_lr <- textmodel_lr(train_dfm, 
-                                      y = docvars(train_dfm, "speaker"))
-
-#predict speaker 
-pred_speaker_classifier_lr <- predict(speaker_classifier_lr, 
-                                   newdata = matched_dfm, 
-                                   type = "class")
-
-#confusion matrix
-tab_class_lr <- table(predicted_speaker_lr = pred_speaker_classifier_lr, 
-                       actual_speaker = docvars(test_dfm, "speaker"))
-print(tab_class_lr)
 ```
 
-We now need to decide which of these classifiers works best for us. As discussed in class we would need to check precision, recall and F1 scores. The `confusionMatrix()` function in the `caret` package does exactly that. 
+In a next step we run the LSS model. We set the number of embeddings dimensions to 300 and cache the results, which speeds up the process.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-confusionMatrix(tab_class_nb, mode = "prec_recall")
 
-confusionMatrix(tab_class_lr, mode = "prec_recall")
+tmod_lss <- textmodel_lss(dfmat_speeches_sent, 
+                          seeds = seed,
+                          terms = europe, 
+                          k = 300, 
+                          cache = TRUE)
+
+```
+Display the most positive words that appear in the context of Europe
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+head(coef(tmod_lss), 20)
+
 ```
 
-Based on the F1 score, our logistic regression classifier is performing slightly better than predictions from our Naive Bayes classifier, so, all else equal we would go with logistic regression. 
+Most negative words that appear in the context of Europe
 
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+tail(coef(tmod_lss), 20)
+```
+
+To obtain document-level scores, we use the `dfm_group()` to re-assemble the sentence-level dfm back at the document-level. We then use `predict()` to make document level LSS predictions. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+dfmat_doc <- dfm_group(dfmat_speeches_sent)
+dat <- docvars(dfmat_doc)
+dat$fit <- unlist(predict(tmod_lss, 
+                          newdata = dfmat_doc, 
+                          se = TRUE)[1])
+dat$se <- unlist(predict(tmod_lss, 
+                         newdata = dfmat_doc, 
+                         se = TRUE)[2])
+
+
+```
+
+We then plot these predictions, ordering speakers from most positive to most negative on Europe.   
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+dat$speaker <- with(dat, reorder(speaker, fit))
+
+
+lss_plot <- ggplot(arrange(dat, fit), 
+                        aes(x= speaker, 
+                            y = fit,
+                            ymin = fit -1.96*se,
+                            ymax = fit + 1.96*se)) +
+  geom_pointrange(pch = 21, fill = "gray", color = "gray", size = 0.75) +
+  theme_minimal() + coord_flip()
+print(lss_plot)
+
+```
 
 ## Exercises
 
-For this set of exercises we will use the `data_corpus_moviereviews` corpus that is stored in **quanteda**. This dataset contains 2000 move reviews which are labeled as positive or negative. We'll try to predict these labels using supervised machine learning. 
+For this set of exercises we will use `data_corpus_irishbudget2010` a corpus that consists of 2010 budget speeches in Ireland. The dataset is included in the quanteda package.
 
-Apply `table()` to the sentiment variable appended to `data_corpus_moviereviews` to inspect how many reviews are labelled positive and negative.
+1. Tokenize `data_corpus_irishbudget2010`, remove stopwords, punctuation characters, and create a dfm called `dfm_budget_debates`
 
 ```{r}
+dfm_budget_debates <- data_corpus_irishbudget2010 %>%
+  tokens(remove_punct = TRUE) %>% 
+  tokens_remove(pattern = stopwords("en")) %>% 
+  dfm()
 
 ```
 
-Check the distribution of the number of tokens across reviews by applying `ntoken()` to the corpus and then produce a histogram using `hist()` .  
+2. Create a binary variable `ref_score` that equals 1 if the speaker's name is "Lenihan" (i.e., the Minister of Finance at the time) and -1 if the speaker's name is "Kenny" (Enda Kenny was leader of the opposition at the time). For all other speakers, assign the value NA. 
+
 ```{r}
+
+ref_score <- rep(NA, nrow(dfm_budget_debates))
+
+government <- which(docvars(dfm_budget_debates, "name") == "Lenihan")
+opposition <- which(docvars(dfm_budget_debates, "name") == "Kenny")
+
+ref_score[government] = 1
+ref_score[opposition] = -1
 
 ```
 
-
-Tokenise the corpus and save it as `tokens_reviews`. 
+3. Apply a Wordscores model for this document-feature matrix using `ref_score` as the value for `y`. 
 
 ```{r}
-
+budget_debates_ws <- textmodel_wordscores(dfm_budget_debates, 
+                                          y = ref_score)
 ```
 
-Create a document-feature matrix and call it `dfm_reviews`
+4. Explore the scores for all words in the dfm using `textplot_scale1d()`. Note: set margin to "features". Why are some terms clustered around -1 and +1?
 
 ```{r}
-
+textplot_scale1d(budget_debates_ws, margin = "features")
 ```
 
-Apply `topfeatures()` to this dfm and get the 50 most frequent features.
+5. Use `predict()` for predicting the document-level word scores for all documents in the dfm. Set `se = TRUE` to add 95% confidence intervals.
 
 ```{r}
-
-```
-
-**Optional** Repeat this step, but get the 25 most frequent features from reviews labelled as "pos" and "neg".
-
-
-```{r}
-
+pred_ws <- predict(budget_debates_ws, 
+                   newdata = dfm_budget_debates, 
+                   se = TRUE)
 ```
 
 
-## Supervised Machine Learning
-
-Set a seed (`set.seed()`) to ensure reproducibility. 
+6. Apply `textplot_scale1d()` to the object created in question 5. Does this method distinguish between government (FF and Green) and oppoisiton parties?
 
 ```{r}
-
+textplot_scale1d(pred_ws)
 ```
 
-Create a new dfm with a random sample of 1500 reviews. We will use this dfm as a training set. Call it `train_movies_dfm`. Use the sampling code we used above. 
-
+Use the `dfm_budget_debates`. Create a new dfm object that only keeps terms that appear in at least three documents and that appear at least three times. Call the resulting dfm `dfm_budget_debates_trimmed`
 
 ```{r}
-
+dfm_budget_debates_trimmed <- dfm_budget_debates %>% 
+  dfm_trim(min_termfreq = 3, min_docfreq = 3)
 ```
 
-Create another dfm with the remaining 500 reviews. Call it `test_movies_dfm`. This will be our test set.
-
+Run a Wordfish model on this dfm.
 
 ```{r}
-
+tmod_wf <- textmodel_wordfish(dfm_budget_debates_trimmed)
 ```
 
-Apply `textmodel_nb()` to the dfm consisting of 1500 documents. Use "sentiment" to train the classifier. Call the output `tmod_nb`
+Use `textplot_scale1d()` to plot (1) document-positions, and scores for each word. You can achieve this by adjusting the `margin` argument.
 
 ```{r}
-
+textplot_scale1d(tmod_wf, margin = "documents")
 ```
 
-Predict the sentiment of the remaining 500 documents by using `predict()`. Call the output `prediction`.
-
-
 ```{r}
-
-```
-
-Create a cross-table/confusion matrix to assess the classification performance using `table()`. 
-
-```{r}
-
+textplot_scale1d(tmod_wf, margin = "features")
 ```
 
 
