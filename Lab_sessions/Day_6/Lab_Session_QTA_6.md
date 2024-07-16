@@ -104,26 +104,26 @@ head(collocations, 20)
 ```
 
     ##               collocation count count_nested length    lambda         z
-    ## 150            van rompuy    90           90      2 15.689997 10.850267
-    ## 153          21st century    22            4      2 13.342757  9.262196
-    ## 113       baroness ashton    65           24      2 13.312609 19.490070
-    ## 154           tax evasion    20            6      2 11.627708  8.111530
-    ## 142       transaction tax    42           42      2 11.401741 13.654869
-    ## 104         death penalty    26            0      2 11.239816 22.273708
-    ## 73        rating agencies    23           12      2 10.830812 25.447617
-    ## 96   progressive alliance    28            0      2 10.722625 23.292196
-    ## 10         prime minister   226          147      2 10.603158 46.221296
-    ## 131        united kingdom    37            7      2 10.546055 16.039693
-    ## 119       redemption fund    37           10      2 10.457767 18.498362
-    ## 30            middle east    56           13      2 10.340615 34.556555
-    ## 51    christian democrats    50           43      2  9.991396 29.109468
-    ## 46         interest rates    56           29      2  9.987648 30.335806
-    ## 15            EUR billion    93           39      2  9.855727 42.692301
-    ## 69          latin america    22            4      2  9.805999 26.265274
-    ## 135 financial transaction    41           41      2  9.784384 14.982553
-    ## 120         mrs malmström    23           11      2  9.525355 18.310931
-    ## 20         speaker agreed    73            0      2  9.447520 40.145146
-    ## 75     youth unemployment    26            5      2  9.282414 25.258173
+    ## 147          derek roland    24           24      2 16.419275  9.978630
+    ## 148          roland clark    24           24      2 16.419275  9.978630
+    ## 142            van rompuy   139          137      2 16.212456 11.181246
+    ## 144          nigel farage    85           85      2 15.548680 10.750880
+    ## 146         gerard batten    20           19      2 15.393733 10.075052
+    ## 149           john bufton    22           22      2 14.297215  9.793065
+    ## 121            tony blair    23           10      2 12.922315 17.459101
+    ## 73        baroness ashton    58           31      2 12.635547 25.492937
+    ## 88          death penalty    33            3      2 11.504525 23.977600
+    ## 151           tax evasion    21           10      2 11.481472  8.015170
+    ## 152            tax havens    21            8      2 11.481472  8.015170
+    ## 134       transaction tax    45           45      2 11.272687 13.522628
+    ## 22         prime minister   205          145      2 11.182949 38.110490
+    ## 125        united kingdom    61            7      2 11.088553 17.055409
+    ## 91           stress tests    26            5      2 10.880890 23.890386
+    ## 79        rating agencies    21           11      2 10.734348 24.559792
+    ## 139            herman van    20           20      2 10.683896 12.563452
+    ## 31            middle east    49            7      2 10.444058 32.640114
+    ## 87     youth unemployment    22            4      2  9.934285 24.040316
+    ## 130 financial transaction    44           44      2  9.888247 15.165172
 
 Let’s also append collocations of names to our tokens object.
 
@@ -233,35 +233,35 @@ summary(speeches_ws, 10)
     ## 
     ## Reference Document Statistics:
     ##                      score  total min   max   mean median
-    ## Brian Crowley           NA  31851   0 19693 1.6563      0
-    ## Cristiana Muscardini    NA  17269   0 10020 0.8980      0
-    ## Daniel Cohn-Bendit      NA  43988   0 28970 2.2875      0
-    ## Francesco Speroni       -1  35183   0 22680 1.8296      0
-    ## Francis Wurtz           NA  23883   0 14093 1.2420      0
-    ## Gabriele Zimmer         NA  12003   0  7486 0.6242      0
-    ## Graham Watson           NA  33806   0 19169 1.7580      0
-    ## Guy Verhofstadt          1 100041   0 65963 5.2023      0
-    ## Hannes Swoboda          NA  76886   0 50470 3.9982      0
-    ## Jan Zahradil            NA  12497   0  8069 0.6499      0
-    ## Joseph Daul             NA  85237   0 51801 4.4325      0
-    ## Kathy Sinnott           NA  29796   0 17592 1.5495      0
-    ## Lothar Bisky            NA  19666   0 11716 1.0227      0
-    ## Martin Callanan         NA  33839   0 21180 1.7597      0
-    ## Martin Schulz           NA 125564   0 80209 6.5296      0
-    ## Michal Kaminski         NA  41073   0 23806 2.1359      0
-    ## Monica Frassoni         NA  24188   0 15369 1.2578      0
-    ## Nigel Farage            -1  54564   0 35348 2.8374      0
-    ## Rebecca Harms            1  41699   0 26841 2.1684      0
-    ## Syed Kamall             NA  14279   0  8981 0.7425      0
+    ## Brian Crowley           NA  31873   0 19693 1.6579      0
+    ## Cristiana Muscardini    NA  17283   0 10020 0.8990      0
+    ## Daniel Cohn-Bendit      NA  43997   0 28970 2.2885      0
+    ## Francesco Speroni       -1  35113   0 22680 1.8264      0
+    ## Francis Wurtz           NA  23888   0 14093 1.2425      0
+    ## Gabriele Zimmer         NA  12010   0  7486 0.6247      0
+    ## Graham Watson           NA  33787   0 19169 1.7575      0
+    ## Guy Verhofstadt          1 100208   0 65963 5.2124      0
+    ## Hannes Swoboda          NA  76949   0 50470 4.0025      0
+    ## Jan Zahradil            NA  12504   0  8069 0.6504      0
+    ## Joseph Daul             NA  85256   0 51801 4.4346      0
+    ## Kathy Sinnott           NA  29791   0 17592 1.5496      0
+    ## Lothar Bisky            NA  19654   0 11716 1.0223      0
+    ## Martin Callanan         NA  33841   0 21180 1.7603      0
+    ## Martin Schulz           NA 125559   0 80209 6.5310      0
+    ## Michal Kaminski         NA  41067   0 23806 2.1361      0
+    ## Monica Frassoni         NA  24207   0 15369 1.2591      0
+    ## Nigel Farage            -1  54482   0 35348 2.8339      0
+    ## Rebecca Harms            1  41665   0 26841 2.1672      0
+    ## Syed Kamall             NA  14274   0  8981 0.7425      0
     ## 
     ## Wordscores:
     ## (showing first 10 elements)
     ##                            mr_president president-in-office             council 
-    ##             0.05174            -0.02354             0.40430             0.85732 
-    ##           president          commission             meeting               place 
-    ##             0.02869             0.50881             0.65403            -0.33963 
+    ##             0.05087            -0.02449             0.40385             0.86985 
+    ##           president          commission     council_meeting               place 
+    ##             0.02772             0.50801             0.41980            -0.34024 
     ##               month               focus 
-    ##            -0.32878             0.74594
+    ##            -0.32974             0.74576
 
 ``` r
 #sort most discriminant words:
@@ -270,22 +270,22 @@ summary(speeches_ws, 10)
 head(sort(speeches_ws$wordscores), 10)
 ```
 
-    ##       referendum nigel_farage_efd             ukip           anthem 
-    ##       -0.9380516       -0.9309601       -0.9305978       -0.9095479 
-    ##           nation              gbp      referendums          frankly 
-    ##       -0.9028548       -0.9005957       -0.9004102       -0.8959805 
+    ##       referendum     nation_state nigel_farage_efd             ukip 
+    ##       -0.9381754       -0.9331389       -0.9310540       -0.9098930 
+    ##           anthem              gbp      referendums          frankly 
+    ##       -0.9096606       -0.9007205       -0.9005331       -0.8961408 
     ##          croatia          peoples 
-    ##       -0.8948855       -0.8928074
+    ##       -0.8950178       -0.8929586
 
 ``` r
 #pro-EU words
 tail(sort(speeches_ws$wordscores), 10)
 ```
 
-    ##        council        reforms  nuclear_power     copenhagen     discussion 
-    ##      0.8573181      0.8632123      0.8632699      0.8684927      0.8693547 
+    ##        reforms  nuclear_power     copenhagen     discussion        council 
+    ##      0.8629029      0.8631816      0.8683533      0.8691359      0.8698531 
     ##          japan     colleagues        finally           task responsibility 
-    ##      0.8727019      0.8780754      0.8948382      0.8960902      0.9371553
+    ##      0.8725772      0.8778326      0.8946250      0.8958954      0.9370709
 
 ``` r
 #histogram of wordscores
@@ -310,9 +310,9 @@ sort(speeches_wordscores_predict$fit, decreasing = FALSE)[1:5]
 ```
 
     ## Francesco Speroni      Nigel Farage     Kathy Sinnott   Martin Callanan 
-    ##       -0.06169123       -0.04902033        0.02839818        0.03387351 
+    ##       -0.06099236       -0.04851617        0.02828642        0.03394538 
     ##       Syed Kamall 
-    ##        0.04443755
+    ##        0.04421186
 
 This lists Kathy Sinnott (I&D), Martin Callanan (ECR) and Syed Kamall
 (ECR) as the most anti-EU speakers.
@@ -324,7 +324,7 @@ sort(speeches_wordscores_predict$fit, decreasing = TRUE)[1:5]
 ```
 
     ##   Rebecca Harms Guy Verhofstadt     Joseph Daul    Lothar Bisky Monica Frassoni 
-    ##      0.12165815      0.10884050      0.08644044      0.08428174      0.07916154
+    ##      0.12104643      0.10948332      0.08674725      0.08429510      0.07920753
 
 This lists Joseph Daul (EPP), Lothar Bisky (Party of the European Left)
 and Monica Frassoni (Green Party) as the most pro-EU speakers.
@@ -356,40 +356,40 @@ summary(speeches_wf)
     ## 
     ## Estimated Document Positions:
     ##                         theta       se
-    ## Brian Crowley         1.05544 0.009407
-    ## Cristiana Muscardini  0.97493 0.014242
-    ## Daniel Cohn-Bendit   -0.48845 0.019158
-    ## Francesco Speroni    -1.98454 0.008672
-    ## Francis Wurtz         0.74547 0.015556
-    ## Gabriele Zimmer       0.52748 0.026147
-    ## Graham Watson         0.96193 0.010348
-    ## Guy Verhofstadt      -1.06331 0.011520
-    ## Hannes Swoboda       -0.14991 0.013906
-    ## Jan Zahradil         -0.42436 0.035834
-    ## Joseph Daul           0.53757 0.009746
-    ## Kathy Sinnott         1.30891 0.006284
-    ## Lothar Bisky          0.32354 0.023114
-    ## Martin Callanan      -1.09941 0.019526
-    ## Martin Schulz         0.16446 0.009856
-    ## Michal Kaminski       1.15290 0.007134
-    ## Monica Frassoni       0.47184 0.019120
-    ## Nigel Farage         -1.89536 0.008091
-    ## Rebecca Harms        -0.03372 0.018330
-    ## Syed Kamall          -1.08542 0.030221
+    ## Brian Crowley         1.05917 0.009479
+    ## Cristiana Muscardini  0.97864 0.014338
+    ## Daniel Cohn-Bendit   -0.49434 0.019145
+    ## Francesco Speroni    -1.96876 0.008468
+    ## Francis Wurtz         0.74965 0.015628
+    ## Gabriele Zimmer       0.52892 0.026280
+    ## Graham Watson         0.96471 0.010436
+    ## Guy Verhofstadt      -1.06281 0.011414
+    ## Hannes Swoboda       -0.15376 0.013937
+    ## Jan Zahradil         -0.43788 0.035843
+    ## Joseph Daul           0.53703 0.009811
+    ## Kathy Sinnott         1.31632 0.006310
+    ## Lothar Bisky          0.32721 0.023187
+    ## Martin Callanan      -1.10518 0.019295
+    ## Martin Schulz         0.15974 0.009911
+    ## Michal Kaminski       1.16356 0.007118
+    ## Monica Frassoni       0.46479 0.019311
+    ## Nigel Farage         -1.88156 0.007884
+    ## Rebecca Harms        -0.05245 0.018479
+    ## Syed Kamall          -1.09299 0.029858
     ## 
     ## Estimated Feature Scores:
     ##              mr_president president-in-office council president commission
-    ## beta -0.4808      -0.5151              0.5458  -0.385    -0.465    -0.4948
-    ## psi   9.9713       4.2271              2.0076   4.253     3.785     4.3026
-    ##      meeting   place   month   focus economic affairs european_union proposals
-    ## beta -0.4012 -0.4075 -0.7167 0.02968  -0.4427 -0.3369        -0.4337   -0.3825
-    ## psi   2.1567  2.9013  0.9784 1.65512   3.7305  1.1283         4.1719    2.3699
-    ##      created  return economy previous   state implemented immediately restart
-    ## beta -0.3479 -0.3626 -0.2235  -0.2987 -0.6403     -0.2603     -0.4805 -0.2376
-    ## psi   1.3381  1.6435  2.7351   1.1792  3.1823      1.0743      1.2839 -1.2714
-    ##        today    speak  future  europe  people   claim    care situation
-    ## beta -0.5782 -0.03543 -0.2012 -0.4331 -0.6289 -0.4143 -0.1188   -0.2663
-    ## psi   3.8918  2.22059  3.3096  4.8975  4.4404  0.6306  1.1777    3.1539
+    ## beta -0.4759      -0.5099              0.5428 -0.3811    -0.461    -0.4908
+    ## psi   9.9712       4.2270              2.0109  4.2202     3.784     4.3023
+    ##      council_meeting   place   month   focus economic affairs european_union
+    ## beta         -0.4069 -0.4008 -0.7097 0.03115  -0.4371 -0.3334        -0.4278
+    ## psi           0.8236  2.9013  0.9791 1.65594   3.7304  1.1282         4.1719
+    ##      proposals created  return economy previous  state implemented immediately
+    ## beta   -0.3776 -0.3438 -0.3572 -0.2189  -0.2957 -0.499     -0.2572     -0.4777
+    ## psi     2.3698  1.3380  1.6434  2.7351   1.1791  3.129      1.0743      1.2835
+    ##      restart   today   speak  future europe  people   claim    care situation
+    ## beta -0.2339 -0.5734 -0.0315 -0.1964 -0.428 -0.6226 -0.4094 -0.1093   -0.2699
+    ## psi  -1.2713  3.8916  2.2208  3.3096  4.897  4.4407  0.6305  1.1770    3.2091
 
 Let’s take out the word level parameters beta and psi. Beta is the
 estimated word position on the underlying dimension and psi is the word
@@ -403,19 +403,19 @@ wordfish_word_data <- data.frame(beta = speeches_wf$beta,
 dim(wordfish_word_data)
 ```
 
-    ## [1] 19230     3
+    ## [1] 19225     3
 
 ``` r
 head(wordfish_word_data)
 ```
 
     ##         beta      psi            features
-    ## 1 -0.4807875 9.971348                    
-    ## 2 -0.5151047 4.227079        mr_president
-    ## 3  0.5458280 2.007618 president-in-office
-    ## 4 -0.3849784 4.253342             council
-    ## 5 -0.4650497 3.784531           president
-    ## 6 -0.4947633 4.302551          commission
+    ## 1 -0.4759299 9.971192                    
+    ## 2 -0.5098591 4.226982        mr_president
+    ## 3  0.5427927 2.010872 president-in-office
+    ## 4 -0.3811255 4.220164             council
+    ## 5 -0.4610271 3.784273           president
+    ## 6 -0.4908225 4.302252          commission
 
 ``` r
 word_plot <- ggplot(data = wordfish_word_data, aes(x = beta, y = psi)) +
@@ -492,13 +492,13 @@ print(correlation)
     ##  Pearson's product-moment correlation
     ## 
     ## data:  scaling_data$fit and scaling_data$theta
-    ## t = 2.5007, df = 18, p-value = 0.02228
+    ## t = 2.4602, df = 18, p-value = 0.02423
     ## alternative hypothesis: true correlation is not equal to 0
     ## 95 percent confidence interval:
-    ##  0.08417074 0.77594275
+    ##  0.07598625 0.77264399
     ## sample estimates:
     ##       cor 
-    ## 0.5077782
+    ## 0.5016392
 
 ## Latent semantic scaling (LSS)
 
@@ -537,12 +537,12 @@ topfeatures(dfmat_speeches_sent, 20)
 
     ##       european         europe         people     parliament     commission 
     ##           3644           3357           2203           1872           1866 
-    ##        council   mr_president european_union         crisis      countries 
-    ##           1756           1735           1625           1409           1394 
-    ##           time             eu          today           make          group 
-    ##           1359           1317           1257           1175           1139 
-    ##      president             mr       economic  member_states       applause 
-    ##           1115           1104           1046           1032            985
+    ##   mr_president        council european_union         crisis      countries 
+    ##           1735           1697           1625           1409           1394 
+    ##           time             eu          today           make             mr 
+    ##           1359           1317           1257           1175           1145 
+    ##          group      president       economic  member_states       applause 
+    ##           1139           1115           1046           1032            985
 
 In this case we rely on the short list of sentiment words as a seed list
 
@@ -587,14 +587,14 @@ Display the most positive words that appear in the context of Europe
 head(coef(tmod_lss), 20)
 ```
 
-    ##   convention  enlargement  coordinated  cooperation        build     interest 
-    ##   0.11470282   0.08717125   0.08463248   0.07687663   0.07665662   0.07572025 
-    ##       manage    incapable      succeed         rome       closer    effective 
-    ##   0.07511917   0.07136388   0.06776148   0.06746154   0.06277461   0.06274659 
-    ##     socially member_state  involvement       spirit        ideal        daily 
-    ##   0.06250453   0.06171761   0.06148405   0.06052453   0.05960473   0.05516287 
-    ##        works      focused 
-    ##   0.05379949   0.05291851
+    ##   convention  enlargement  coordinated  cooperation     interest       manage 
+    ##   0.10533731   0.08842771   0.07870697   0.07623279   0.07597778   0.07360272 
+    ##      succeed         rome        build    effective       spirit       closer 
+    ##   0.06778046   0.06740908   0.06650366   0.06617072   0.06449787   0.06447704 
+    ##         show      focused    incapable   unilateral   foundation        works 
+    ##   0.06311580   0.06207654   0.05808067   0.05691814   0.05564631   0.05366143 
+    ## member_state   determined 
+    ##   0.05354966   0.05242009
 
 Most negative words that appear in the context of Europe
 
@@ -602,14 +602,14 @@ Most negative words that appear in the context of Europe
 tail(coef(tmod_lss), 20)
 ```
 
-    ##         idea undemocratic    influence      growing      citizen    unelected 
-    ##  -0.03853310  -0.03891500  -0.03996760  -0.04021670  -0.04130685  -0.04134743 
-    ##        shape         mark         room       values civilisation        class 
-    ##  -0.04139160  -0.04185185  -0.04335514  -0.04416131  -0.04464318  -0.04544961 
-    ##      adopted      federal    elections  development          big         rest 
-    ##  -0.04581402  -0.04653197  -0.04658340  -0.04747090  -0.05087080  -0.05175101 
-    ##      balkans          row 
-    ##  -0.05224911  -0.05534609
+    ##         schuman       influence           calls         citizen            idea 
+    ##     -0.03970908     -0.04027362     -0.04070250     -0.04157411     -0.04165787 
+    ##            room    undemocratic         adopted           shape           trend 
+    ##     -0.04303863     -0.04417738     -0.04508241     -0.04543940     -0.04569424 
+    ##          values       unelected            rest     development         balkans 
+    ##     -0.04587243     -0.04616606     -0.04673178     -0.04776851     -0.04838707 
+    ##             big         federal       elections             row political_class 
+    ##     -0.04875997     -0.04886974     -0.04952429     -0.05955934     -0.07161893
 
 To obtain document-level scores, we use the `dfm_group()` to re-assemble
 the sentence-level dfm back at the document-level. We then use
@@ -654,95 +654,32 @@ included in the quanteda package.
 1.  Tokenize `data_corpus_irishbudget2010`, remove stopwords,
     punctuation characters, and create a dfm called `dfm_budget_debates`
 
-``` r
-dfm_budget_debates <- data_corpus_irishbudget2010 %>%
-  tokens(remove_punct = TRUE) %>% 
-  tokens_remove(pattern = stopwords("en")) %>% 
-  dfm()
-```
-
 2.  Create a binary variable `ref_score` that equals 1 if the speaker’s
     name is “Lenihan” (i.e., the Minister of Finance at the time) and -1
     if the speaker’s name is “Kenny” (Enda Kenny was leader of the
     opposition at the time). For all other speakers, assign the value
     NA.
 
-``` r
-ref_score <- rep(NA, nrow(dfm_budget_debates))
-
-government <- which(docvars(dfm_budget_debates, "name") == "Lenihan")
-opposition <- which(docvars(dfm_budget_debates, "name") == "Kenny")
-
-ref_score[government] = 1
-ref_score[opposition] = -1
-```
-
 3.  Apply a Wordscores model for this document-feature matrix using
     `ref_score` as the value for `y`.
-
-``` r
-budget_debates_ws <- textmodel_wordscores(dfm_budget_debates, 
-                                          y = ref_score)
-```
 
 4.  Explore the scores for all words in the dfm using
     `textplot_scale1d()`. Note: set margin to “features”. Why are some
     terms clustered around -1 and +1?
 
-``` r
-textplot_scale1d(budget_debates_ws, margin = "features")
-```
-
-![](Lab_Session_QTA_6_files/figure-gfm/unnamed-chunk-29-1.png)<!-- -->
-
 5.  Use `predict()` for predicting the document-level word scores for
     all documents in the dfm. Set `se = TRUE` to add 95% confidence
     intervals.
-
-``` r
-pred_ws <- predict(budget_debates_ws, 
-                   newdata = dfm_budget_debates, 
-                   se = TRUE)
-```
-
-    ## Warning: 2832 features in newdata not used in prediction.
 
 6.  Apply `textplot_scale1d()` to the object created in question 5. Does
     this method distinguish between government (FF and Green) and
     oppoisiton parties?
 
-``` r
-textplot_scale1d(pred_ws)
-```
-
-![](Lab_Session_QTA_6_files/figure-gfm/unnamed-chunk-31-1.png)<!-- -->
-
 Use the `dfm_budget_debates`. Create a new dfm object that only keeps
 terms that appear in at least three documents and that appear at least
 three times. Call the resulting dfm `dfm_budget_debates_trimmed`
 
-``` r
-dfm_budget_debates_trimmed <- dfm_budget_debates %>% 
-  dfm_trim(min_termfreq = 3, min_docfreq = 3)
-```
-
 Run a Wordfish model on this dfm.
-
-``` r
-tmod_wf <- textmodel_wordfish(dfm_budget_debates_trimmed)
-```
 
 Use `textplot_scale1d()` to plot (1) document-positions, and scores for
 each word. You can achieve this by adjusting the `margin` argument.
-
-``` r
-textplot_scale1d(tmod_wf, margin = "documents")
-```
-
-![](Lab_Session_QTA_6_files/figure-gfm/unnamed-chunk-34-1.png)<!-- -->
-
-``` r
-textplot_scale1d(tmod_wf, margin = "features")
-```
-
-![](Lab_Session_QTA_6_files/figure-gfm/unnamed-chunk-35-1.png)<!-- -->

@@ -413,10 +413,6 @@ For this set of exercises we will use `data_corpus_irishbudget2010` a corpus tha
 1. Tokenize `data_corpus_irishbudget2010`, remove stopwords, punctuation characters, and create a dfm called `dfm_budget_debates`
 
 ```{r}
-dfm_budget_debates <- data_corpus_irishbudget2010 %>%
-  tokens(remove_punct = TRUE) %>% 
-  tokens_remove(pattern = stopwords("en")) %>% 
-  dfm()
 
 ```
 
@@ -424,65 +420,54 @@ dfm_budget_debates <- data_corpus_irishbudget2010 %>%
 
 ```{r}
 
-ref_score <- rep(NA, nrow(dfm_budget_debates))
-
-government <- which(docvars(dfm_budget_debates, "name") == "Lenihan")
-opposition <- which(docvars(dfm_budget_debates, "name") == "Kenny")
-
-ref_score[government] = 1
-ref_score[opposition] = -1
 
 ```
 
 3. Apply a Wordscores model for this document-feature matrix using `ref_score` as the value for `y`. 
 
 ```{r}
-budget_debates_ws <- textmodel_wordscores(dfm_budget_debates, 
-                                          y = ref_score)
+
 ```
 
 4. Explore the scores for all words in the dfm using `textplot_scale1d()`. Note: set margin to "features". Why are some terms clustered around -1 and +1?
 
 ```{r}
-textplot_scale1d(budget_debates_ws, margin = "features")
+
 ```
 
 5. Use `predict()` for predicting the document-level word scores for all documents in the dfm. Set `se = TRUE` to add 95% confidence intervals.
 
 ```{r}
-pred_ws <- predict(budget_debates_ws, 
-                   newdata = dfm_budget_debates, 
-                   se = TRUE)
+
 ```
 
 
 6. Apply `textplot_scale1d()` to the object created in question 5. Does this method distinguish between government (FF and Green) and oppoisiton parties?
 
 ```{r}
-textplot_scale1d(pred_ws)
+
 ```
 
 Use the `dfm_budget_debates`. Create a new dfm object that only keeps terms that appear in at least three documents and that appear at least three times. Call the resulting dfm `dfm_budget_debates_trimmed`
 
 ```{r}
-dfm_budget_debates_trimmed <- dfm_budget_debates %>% 
-  dfm_trim(min_termfreq = 3, min_docfreq = 3)
+
 ```
 
 Run a Wordfish model on this dfm.
 
 ```{r}
-tmod_wf <- textmodel_wordfish(dfm_budget_debates_trimmed)
+
 ```
 
 Use `textplot_scale1d()` to plot (1) document-positions, and scores for each word. You can achieve this by adjusting the `margin` argument.
 
 ```{r}
-textplot_scale1d(tmod_wf, margin = "documents")
+
 ```
 
 ```{r}
-textplot_scale1d(tmod_wf, margin = "features")
+
 ```
 
 
