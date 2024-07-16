@@ -1,5 +1,5 @@
 ---
-title: "QTA Day 7: Scaling methods"
+title: "QTA Day 7: Topic models"
 output:
   github_document:
   html_document:
@@ -9,10 +9,13 @@ date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, results = TRUE)
+knitr::opts_chunk$set(echo = TRUE, results = TRUE, warning = FALSE)
 ```
 
-This document gives some examples of how to apply scaling methods (Wordscores, Wordfish, LSS) in **quanteda**. For these examples, we use the (English) speeches of EP group leaders that are part of the [EUSpeech](https://dataverse.harvard.edu/dataverse/euspeech) dataset. The **quanteda**, **quanteda.textmodels**, **quanteda.textstats**, **quanteda.textplots**, **ggplot2** and **tidyverse** packages are familiar at this point. The **quanteda.corpora** package can be downloaded as follows: `devtools::install_github("quanteda/quanteda.corpora")`. The **LSX** package can be downloaded using `install.packages("LSX")`
+This document gives some examples of how to estimate LDA, STM and semisupervised topic models in `R`. For these examples, we will use the corpus `data_corpus_ungd2017` which contains the speeches from the UN General Assembly in 2017 and is available in **quanteda.corpora**. 
+
+Let's load necessary libraries first. We will estimate LDA topic models using the **seededlda** library and structural topic models using the **stm** library.
+
 
 ```{r, echo = TRUE, results = 'verbatim', warning = FALSE, message = FALSE}
 
@@ -22,45 +25,19 @@ library(quanteda.textmodels)
 library(quanteda.textplots)
 library(quanteda.corpora)
 library(quanteda.textstats)
+library(seededlda)
+library(stm)
 library(ggplot2)
 library(tidyverse)
-library(LSX)
 
-#read in the EP speeches
-speeches <- read.csv(file = "speeches_ep.csv", 
-                     header = TRUE, 
-                     stringsAsFactors = FALSE, 
-                     sep = ",", 
-                     encoding = "UTF-8")
+corpus_speeches <- data_corpus_ungd2017
 
-#take a look at how many unique speakers there are in the dataset
-unique(speeches$speaker)
-```
-
-Let's first merge the speeches for each speaker using some tidyverse data-wrangling. 
-
-```{r, echo = TRUE, results = 'verbatim', warning = FALSE, message = FALSE}
-
-#the `%>%` command is the pipe function and helps us with a chain of functions
-#think of it as `then`:
-#take the speeches dataframe, then
-#group by speaker, then
-#paste speeches together.
-
-speeches <- speeches %>%
-  group_by(speaker) %>%
-  summarise(text = paste(text, collapse = " ")) %>%
-  ungroup()
-
-#confirm that you have a total of 20 (very long) concatenated speeches, 1 for each EP speaker
-dim(speeches)
+summary(corpus_speeches, n = 10)
 
 ```
-Let's first tokenise this corpus.
+As you can see the corpus contains 196 speeches, one from each UN member state. Let's tokenise this corpus. 
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-#create a corpus object
-corpus_speeches <- corpus(speeches)
 
 #tokenise the corpus
 
@@ -77,357 +54,344 @@ tokens_speeches <- tokens(corpus_speeches,
 
 ```
 
-MEP speeches are full of jargon and references to politicians. Let's append bigram collocations to our tokens object to account for this. 
+Let's append collocations that occur 10 times or more
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
 collocations <- tokens_speeches %>%
-  tokens_sample(size = 10, replace = FALSE) %>%
-  textstat_collocations(min_count = 20,
+  textstat_collocations(min_count = 10,
                         size = 2:3) %>%
   arrange(-lambda)
 
-head(collocations, 20)
-
-```
-
-If we want to add the most surprising collocations to our tokens object we can do so using `tokens_compund`:
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-collocations <- collocations %>%
-  filter(lambda > 5) %>%
-  pull(collocation) %>%
-  phrase()
+head(collocations, 50)
 
 tokens_speeches <- tokens_compound(tokens_speeches, collocations)
 
 ```
 
-Create a dfm, and change the document names to the speaker names
+Let's include only those tokens that appear in the speeches of at least 5 countries and maximum 150 countries
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-dfm_speeches <- dfm(tokens_speeches)
-docnames(dfm_speeches) <- docvars(dfm_speeches, "speaker")
-```
-
-## Wordscores 
-
-Let's see if we can use Wordscores to locate these speakers on a pro-anti EU dimension. We'll first need to determine reference texts to anchor this dimension. On the anti-EU side we'll locate Francesco Speroni and Nigel Farage, and on the pro-EU dimension we'll locate Guy Verhofstadt, leader of the liberal ALDE group, and a pro-EU voice, as well as Rebecca Harms, the leader of the Greens:
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-#append an empty reference_score variable to the speeches_dfm docvars
-docvars(dfm_speeches, "reference_score") <- NA
-
-#locate which rows correspond with Guy Verhofstadt and Rebecca Harms (pro_eu) and Francesco Speroni and Nigel Farage (anti_eu)
-pro_eu <- which(docvars(dfm_speeches) == "Guy Verhofstadt" | docvars(dfm_speeches) == "Rebecca Harms")
-anti_eu <- which(docvars(dfm_speeches) == "Francesco Speroni" |
-                 docvars(dfm_speeches) == "Nigel Farage" )
-
-#assign reference scores to Guy Verhofstadt and Rebecca Harms (1) and Francesco Speroni and Nigel Farage (-1)
-docvars(dfm_speeches, "reference_score")[pro_eu] <- 1
-docvars(dfm_speeches, "reference_score")[anti_eu] <- -1
-
-#inspects the reference.score variable:
-docvars(dfm_speeches, "reference_score")
-
-#implement wordscores as per Laver, Benoit, Garry (2003)
-speeches_ws <- textmodel_wordscores(dfm_speeches, 
-                                    y = docvars(dfm_speeches, "reference_score"), 
-                                    scale = c("linear"), 
-                                    smooth = 1)
-summary(speeches_ws, 10)
-
-#sort most discriminant words:
-
-#anti-EU words
-head(sort(speeches_ws$wordscores), 10)
-
-#pro-EU words
-tail(sort(speeches_ws$wordscores), 10)
-
-#histogram of wordscores
-hist(speeches_ws$wordscore, col = "red", border = 0)
-
-```
-
-Let's use the Wordscores model to predict the document scores of the speeches of the remaining group leaders
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-speeches_wordscores_predict <- predict(speeches_ws,
-                                       newdata = dfm_speeches, 
-                                       se = TRUE)
-
-#which speakers are most like Farage and Speroni
-sort(speeches_wordscores_predict$fit, decreasing = FALSE)[1:5]
-
-#which speakers are most like Verhofstadt and Harms
-sort(speeches_wordscores_predict$fit, decreasing = TRUE)[1:5]
-```
-
-Visualize the document scores in a plot:
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-textplot_scale1d(speeches_wordscores_predict)
-```
-
-
-## Wordfish
-
-Estimate a Wordfish model and inspect its output. Using the argument `dir=c(4,8)` set the direction of the dimension so that the document score for Francesco Speroni (speaker 4) is smaller than the document score for Guy Verhofdstadt (speaker 8)
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-speeches_wf <- textmodel_wordfish(dfm_speeches,
-                                  dir = c(4,8))
-summary(speeches_wf)
-
-```
-
-Let's take out the word level parameters beta and psi
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-wordfish_word_data <- data.frame(beta = speeches_wf$beta,
-                            psi = speeches_wf$psi,
-                            features = speeches_wf$features)
-
-dim(wordfish_word_data)
-head(wordfish_word_data)
-
-word_plot <- ggplot(data = wordfish_word_data, aes(x = beta, y = psi)) +
-    geom_point(pch = 21, fill = "gray", color = "white", size = 0.75) +
-  labs(x = "Beta", y = "Psi") + guides(size = "none", color = guide_legend("")) + 
-  theme_minimal() +
-  geom_text(data=subset(wordfish_word_data, beta > 6 | beta < -6 | psi > 4.5),  
-            aes(x = beta, y = psi, label = features))
-
-print(word_plot)
-```
-
-
-Plot the document positions generated by Wordfish: 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-#generate a dataframe with document level alpha beta and omega
-wordfish_document_data <- data.frame(alpha = speeches_wf$alpha,
-                                     theta = speeches_wf$theta,
-                                     se = speeches_wf$se.theta,
-                                     speaker = speeches_wf$docs)
-
-#order the speaker factor by theta
-wordfish_document_data$speaker <- reorder(wordfish_document_data$speaker, 
-                                           wordfish_document_data$theta)
-
-
-#plot wordfish results using ggplot2
-wordfish_plot <- ggplot(wordfish_document_data, 
-                        aes(x= speaker, 
-                            y = theta,
-                            ymin = theta -1.96*se,
-                            ymax = theta + 1.96*se)) +
-  geom_pointrange(pch = 21, fill = "gray", color = "gray", size = 0.75) +
-  theme_minimal() + coord_flip()
-print(wordfish_plot)
-
-```
-
-Both Wordscores and Wordfish are scaling models and if they pick up on the same dimension they should give us similar results. Let's see if this indeed the case. 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-scaling_data <- rbind(data.frame(speeches_wordscores_predict, wordfish_document_data))
-
-scaling_plot <- ggplot(scaling_data, aes(x = fit, 
-                                         y = theta, 
-                                         label = speaker)) +
-  geom_point(pch = 21, fill = "gray25", color = "white", size = 2.5) +
-  scale_x_continuous(name = "Wordscore prediction") +
-  scale_y_continuous(name = "Wordfish prediction") +
-  theme_minimal() + geom_text(aes(label=speaker), 
-                                        hjust=0, 
-                                        vjust=0, 
-                                        size = 2)
-  
-print(scaling_plot)
-
-correlation <- cor.test(x=scaling_data$fit, 
-                        y=scaling_data$theta,
-                        method = 'pearson')
-print(correlation)
-```
-
-## Latent semantic scaling (LSS)
-
-In order to apply LSS to the corpus we first need to transform the corpus at the sentence level and create tokenize it
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-corpus_speeches_sent <- corpus_reshape(corpus_speeches, to =  "sentences")
-
-tokens_speeches_sent <- tokens(corpus_speeches_sent,
-                               what = "word",
-                               remove_punct = TRUE, 
-                               remove_symbols = TRUE, 
-                               remove_numbers = TRUE,
-                               remove_url = TRUE,
-                               remove_separators = TRUE,
-                               split_hyphens = FALSE,
-                          ) %>%
-  tokens_remove(stopwords(source = "smart"), padding = FALSE)
-
-dfmat_speeches_sent <- tokens_speeches_sent %>% 
-  dfm()
-
-topfeatures(dfmat_speeches_sent, 20)
-
-```
-
-In this case we rely on the short list of sentiment words as a seed list
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-seed <- as.seedwords(data_dictionary_sentiment)
-print(seed)
-
-```
-
-Using the seed words, LSS computes polarity of words frequent in the context of `member*` (which in this example should denote how positive or negative words are around references of membership)
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-# identify context words 
-member <- char_context(tokens_speeches_sent, pattern = "member", p = 0.05)
-
-# run LSS model
-tmod_lss <- textmodel_lss(dfmat_speeches_sent, seeds = seed,
-                          terms = member, k = 300, cache = TRUE)
-
-```
-
-
-Most positive words that appear in the context of membership
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-head(coef(tmod_lss), 20)
-
-```
-
-
-
-Most negative words that appear in the context of membership
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-tail(coef(tmod_lss), 20)
-```
-
-To obtain document-level scores, we use the `dfm_group()` to re-assemble the sentence-level dfm back at the document-level. We then use `predict()` to make document level LSS predictions. 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-dfmat_doc <- dfm_group(dfmat_speeches_sent)
-dat <- docvars(dfmat_doc)
-dat$fit <- unlist(predict(tmod_lss, newdata = dfmat_doc, se = TRUE)[1])
-dat$se <- unlist(predict(tmod_lss, newdata = dfmat_doc, se = TRUE)[2])
+dfm_speeches <- dfm(tokens_speeches) %>%
+     dfm_trim(min_docfreq = 5, 
+             max_docfreq = 150) 
+
+#check the number of documents and features
+dim(dfm_speeches)
 
 
 ```
 
-We then plot these predictions, ordering speakers from most positive to most negative on membership.  
+## Estimating an LDA topic model
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+Let's estimate a topic model with 10 topics. This may take a few minutes, depending on your system. _k_ refers to the number of topics to be estimated; this is a parameter determined by the researcher. The $\aplha$ parameter is a hyperparameter has an impact on the topic distribution in each document (more on that in the exercises). In order to make the results reproducible, we'll use `set.seed()` function. We'll set the maximum number of iterations at 1000 to speed up estimation (the argument defaults to 2000 iterations).
 
-dat$speaker <- with(dat, reorder(speaker, fit))
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+set.seed(123)
+
+lda_10 <- textmodel_lda(dfm_speeches, 
+                       k = 10,
+                       alpha = 1,
+                       max_iter = 1000)
 
 
-lss_plot <- ggplot(arrange(dat, fit), 
-                        aes(x= speaker, 
-                            y = fit,
-                            ymin = fit -1.96*se,
-                            ymax = fit + 1.96*se)) +
-  geom_pointrange(pch = 21, fill = "gray", color = "gray", size = 0.75) +
-  theme_minimal() + coord_flip()
-print(lss_plot)
+```
+
+Take a look at the output of the topic model with 10 topics. For example, we can take a look at the 10 highest-loading terms for each of *k* topics using the terms() function. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+terms(lda_10, 10)
+
+```
+
+In order to obtain the topic that loads highest on each document, we can use the `topics` function. We can append this as a variable to our `docvars`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+head(topics(lda_10), 10)
+
+docvars(dfm_speeches, "topic") <- topics(lda_10)
+
+# cross-table of the topic frequency
+table(docvars(dfm_speeches, "topic"))
+
+```
+
+The topic proportions in each document are stored in an object called theta ($\theta$)
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+head(lda_10$theta, 10)
+```
+
+Let's confirm that column sums of $\theta$ add up to one. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+head(rowSums(lda_10$theta), 10)
+```
+
+## Visualizing a LDA topic model
+
+Let's say we are interested in topic 9 which deals (in my case) with nuclear weapons, treaties, North Korea, etc. We can store the document proportions for this topic in the docvars of our dfm, and call it `nuclear_weapons_topic'
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+ 
+docvars(dfm_speeches, 'nuclear_weapons_topic') <- lda_10$theta[, 9]
+
+```
+
+Let's plot the nuclear weapons topic
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+topic_plot <- ggplot(docvars(dfm_speeches), aes(y = reorder(country_iso, nuclear_weapons_topic), 
+                               x = nuclear_weapons_topic)) + 
+  geom_bar(stat = "identity") + theme_minimal() + scale_x_continuous("Nuclear weapons topic") +
+  scale_y_discrete("Country") 
+
+print(topic_plot)
+
+```
+
+
+Take a look at topic proportions for each country
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+#append the topic proportions
+
+topic_probabilities <- lda_10$theta
+rownames(topic_probabilities) <- rownames(dfm_speeches)
+
+heatmap(as.matrix(topic_probabilities[]))
+```
+
+In a heatmap, darker colors correspond with higher proportions, whereas lighter colors denote lower proportions. In addition, it displays a clustering of countries and topics?
+
+## Estimating a Structural topic model
+
+Structural topic models allow us to model topical content and topical prevalence as a function of metadata. We can estimate an stm using the `stm()` function in the **stm** library. Let's first estimate an stm without any metadata and 3 topics (NB: estimating an **stm** is a bit slow, hence the small number of topics). init.type = "Spectral" is a good starting point for large datasets, and leads to more reliable results.
+
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+stm_3 <- stm(dfm_speeches, 
+              data = docvars(dfm_speeches),
+              seed = 123,
+              K = 3,
+              verbose = FALSE,
+             init.type = "Spectral")
+
+```
+
+We can inspect the estimated topics using the `labelTopics()` function in the **stm** library. FREX prioritizes words that are both frequent in a specific topic and relatively unique to that topic; lift refers to the relative frequency of a term in a topic compared to its overall frequency in the corpus.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+labelTopics(stm_3)
+
+```
+
+We can also plot this model using `plot()`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+plot(stm_3)
+```
+
+`findThoughts()` returns the topic documents associated with a topic
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+findThoughts(stm_3,texts = as.character(corpus_speeches), n = 1, topics = c(1))
+             
+```
+
+Let's now estimate an stm but this time we include metadata. To this end we will first create a dummy variable that denotes whether a country's gdp per capita is smaller than 10000 dollar. We will use `ifelse()` for this. For some countries we do not have data on GDP. In order for stm with metadata to work, we'll remove those from our dfm.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+docvars(dfm_speeches, "gdp_dummy") <- ifelse(docvars(dfm_speeches, "gdp_per_capita") < 10000, 1, 0)
+
+dfm_speeches <- dfm_subset(dfm_speeches, !is.na(gdp_dummy))
+```
+
+Let's investigate if the content of estimated topics is dependent on a country's income by estimating an stm with 3 topics and modeling topical content as a function of our gdp_dummy variable. To speed up estimation, we will only focus on European countries, and we let the maximum number of EM (expectation maximization) steps to be no more than 50. Still, estimating this topic model may take a few minutes. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+dfm_speeches_europe <- dfm_subset(dfm_speeches, continent == "Europe")
+table(docvars(dfm_speeches_europe, "gdp_dummy"))
+
+stm_3_metadata <- stm(dfm_speeches_europe, 
+                      data = docvars(dfm_speeches_europe),
+                      seed = 123,
+                      content = ~ gdp_dummy,
+                      K = 3,
+                      max.em.its = 50,
+                      verbose = TRUE,
+                      init.type = "Spectral")
+```
+
+Using `estimateEffect()` we estimate a regression where documents are the units, the outcome is the proportion of each document about a topic in an STM model and the covariates are document-meta data. This allows us to compare topic proportions for both groups of countries (i.e., rich and poor)
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+eff_gdp <- estimateEffect(
+  1:3 ~ gdp_dummy, 
+  stmobj = stm_3_metadata, 
+  meta = docvars(dfm_speeches_europe))
+
+```
+
+Let's plot these topic proportions
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+plot(eff_gdp, "gdp_dummy",
+     cov.value1 = "< 10000",
+     cov.value2 = "> 10000",
+     method = "difference")
+```
+We don't see any noticeable differences here but keep in mind that we estimated this model on only a small number
+
+
+## Seeded LDA
+
+In a last step, let's estimate a seeded topic model. This topic model is semi-supervised, and requires a set of dictionary words to structure each topic. We'll use a very short dictionary of four topics. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+
+dictionary <- dictionary(list(terrorism = c("terroris*"), 
+                              environment = c("sustainable_development", "global_warming"),
+                              migration = c("migra*", "refugee"),
+                              economy = c("econo*", "development")))
+
+```
+
+Now let's run the `seededlda()` function and inspect the model output. If `auto_iter = TRUE`, then the models stops updating if it has converged before the maximum number of iterations. batch_size splits the corpus into smaller batches to speed up computing. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+lda_seed <- textmodel_seededlda(dfm_speeches, 
+                                dictionary, 
+                                batch_size = 0.25, 
+                                auto_iter = TRUE,
+                                verbose = FALSE)
+
+terms(lda_seed)
+
+head(lda_seed$theta, 10)
+
+```
+
+The `seededlda()` package also allows for unseeded topics. If we want to include 6 unseeded topics, we add the argument `residual = 6`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+lda_seed_res <- textmodel_seededlda(dfm_speeches, 
+                                    dictionary, 
+                                    residual = 6, 
+                                    batch_size = 0.25, 
+                                    auto_iter = TRUE,
+                                    verbose = FALSE)
+
+terms(lda_seed_res)
+
+head(lda_seed_res$theta, 10)
 
 ```
 
 ## Exercises
 
-For this set of exercises we will use `data_corpus_irishbudget2010` a corpus that consists of 2010 budget speeches in Ireland. The dataset is included in the quanteda package.
+Estimate an LDA model with 5 topics on `dfm_speeches` and alpha = 1. Call the model `lda_5`
 
-1. Tokenize `data_corpus_irishbudget2010`, remove stopwords, punctuation characters, and create a dfm called `dfm_budget_debates`
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
 
-```{r}
-dfm_budget_debates <- data_corpus_irishbudget2010 %>%
-  tokens(remove_punct = TRUE) %>% 
-  tokens_remove(pattern = stopwords("en")) %>% 
-  dfm()
-
+lda_5 <- textmodel_lda(dfm_speeches, 
+                       k = 5,
+                       alpha = 1)
 ```
 
-2. Create a binary variable `ref_score` that equals 1 if the speaker's name is "Lenihan" (i.e., the Minister of Finance at the time) and -1 if the speaker's name is "Kenny" (Enda Kenny was leader of the opposition at the time). For all other speakers, assign the value NA. 
+Display the 10 highest loading terms for each topic
 
-```{r}
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
 
-ref_score <- rep(NA, nrow(dfm_budget_debates))
-
-government <- which(docvars(dfm_budget_debates, "name") == "Lenihan")
-opposition <- which(docvars(dfm_budget_debates, "name") == "Kenny")
-
-ref_score[government] = 1
-ref_score[opposition] = -1
-
-```
-
-3. Apply a Wordscores model for this document-feature matrix using `ref_score` as the value for `y`. 
-
-```{r}
-budget_debates_ws <- textmodel_wordscores(dfm_budget_debates, 
-                                          y = ref_score)
-```
-
-4. Explore the scores for all words in the dfm using `textplot_scale1d()`. Note: set margin to "features". Why are some terms clustered around -1 and +1?
-
-```{r}
-textplot_scale1d(budget_debates_ws, margin = "features")
-```
-
-5. Use `predict()` for predicting the document-level word scores for all documents in the dfm. Set `se = TRUE` to add 95% confidence intervals.
-
-```{r}
-pred_ws <- predict(budget_debates_ws, 
-                   newdata = dfm_budget_debates, 
-                   se = TRUE)
+terms(lda_5, 10)
 ```
 
 
-6. Apply `textplot_scale1d()` to the object created in question 5. Does this method distinguish between government (FF and Green) and oppoisiton parties?
+Show the topic distributions of `lda_5` in the first 20 documents.
 
-```{r}
-textplot_scale1d(pred_ws)
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+head(lda_5$theta, 20)
 ```
 
-Use the `dfm_budget_debates`. Create a new dfm object that only keeps terms that appear in at least three documents and that appear at least three times. Call the resulting dfm `dfm_budget_debates_trimmed`
+Estimate another model with 5 topics, but this time with an alpha parameter equal to 10. Call it `lda_5_alpha_10`
 
-```{r}
-dfm_budget_debates_trimmed <- dfm_budget_debates %>% 
-  dfm_trim(min_termfreq = 3, min_docfreq = 3)
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+lda_5_alpha_10 <- textmodel_lda(dfm_speeches, 
+                               k = 5,
+                               alpha = 10)
 ```
 
-Run a Wordfish model on this dfm.
+Show the topic distributions of `lda_5_alpha_10` in the first 20 documents. How do these topic distributions compare to those in `lda_5`. What do you think the alpha parameter has. 
 
-```{r}
-tmod_wf <- textmodel_wordfish(dfm_budget_debates_trimmed)
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+head(lda_5_alpha_10$theta, 20)
 ```
 
-Use `textplot_scale1d()` to plot (1) document-positions, and scores for each word. You can achieve this by adjusting the `margin` argument.
+
+## Optional 
+
+Estimate an stm with 5 topics, using the `europe` variable as metadata. Call it `stm_5_europe`. NB: You can create a binary variable of `europe` using the `continent` variable in document level metadata and the `ifelse()` function. 
 
 ```{r}
-textplot_scale1d(tmod_wf, margin = "documents")
+docvars(dfm_speeches, "europe") <- ifelse(docvars(dfm_speeches, "continent") == "Europe", 1, 0)
+
 ```
 
-```{r}
-textplot_scale1d(tmod_wf, margin = "features")
+We'll set the maximum number of iterations at 50 so as to speed up the process. 
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+stm_5_metadata <- stm(dfm_speeches,
+                     data = docvars(dfm_speeches),
+                     seed = 123,
+                     content = ~ europe,
+                     K = 5,
+                     max.em.its = 50,
+                     verbose = FALSE)
 ```
+
+Plot these topics
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+plot(stm_5_metadata)
+```
+
+
+Using `estimateEffect()` we estimate a regression where documents are the units, the outcome is the proportion of each document about a topic in an STM model and the covariate is the europe variable. Call the output `eff_europe`. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+eff_europe <- estimateEffect(
+  1:5 ~ europe,
+  stmobj = stm_5_metadata,
+  meta = docvars(dfm_speeches))
+
+```
+
+Let's plot these topic proportions
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+plot(eff_europe, "europe",
+    cov.value1 = "Europe",
+    cov.value2 = "Other",
+    method = "difference")
+```
+
 
 
