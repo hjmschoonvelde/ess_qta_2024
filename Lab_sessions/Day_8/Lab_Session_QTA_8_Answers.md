@@ -1,789 +1,518 @@
-This document gives some examples of how to estimate LDA, STM and
-semisupervised topic models in `R`. For these examples, we will use the
-corpus `data_corpus_ungd2017` which contains the speeches from the UN
-General Assembly in 2017 and is available in **quanteda.corpora**.
+QTA Day 8: NLP processing in R
+================
+17 July, 2024
 
-Let’s load necessary libraries first. We will estimate LDA topic models
-using the **seededlda** library and structural topic models using the
-**stm** library.
+The goal of today’s lab session is to inspect the functionality of the
+**udpipe** library. **UDPipe** (Wijffels, 2022) offers
+‘language-agnostic tokenization, tagging, lemmatization and dependency
+parsing of raw text’. We will focus on tagging and lemmatization in
+particular and how these pre-processing steps may make further analysis
+more precise. Lemmatizing generally works better than stemming,
+especially for inflected languages such as German or French.
+Part-of-Speech (POS) tags identify the type of word (noun, verb, etc) so
+it can be used to e.g. analyse only the verbs (actions) or adjectives
+and adverbs (descriptions).
+
+Another library that was developed by the quanteda team and that has
+similar functionality is **spacyr** (Benoit & Matsuo, 2020), an R
+wrapper around the spaCy package in Python. See this
+[link](https://spacyr.quanteda.io/articles/using_spacyr.html) for more
+information on using **spacyr**.
+
+Let’s load required libraries first.
 
 ``` r
 #load libraries
-library(quanteda)
-library(quanteda.textmodels)
-library(quanteda.textplots)
-library(quanteda.corpora)
-library(quanteda.textstats)
-library(seededlda)
-library(stm)
-library(ggplot2)
 library(tidyverse)
-
-corpus_speeches <- data_corpus_ungd2017
-
-summary(corpus_speeches, n = 10)
+library(quanteda)
+library(quanteda.textplots)
+library(quanteda.textmodels)
+library(quanteda.textstats)
+library(quanteda.sentiment)
+library(seededlda)
+library(udpipe)
 ```
 
-    ## Corpus consisting of 196 documents, showing 10 documents:
+The primary challenges for our purposes is to communicate between
+**udpipe** and **quanteda**. In the following code block we first turn
+our corpus into a dataframe called `inaugural_speeches_df` and save the
+speeches – which are now stored in `inaugural_speeches_df$text` – as a
+character vector called txt. **udpipe** works with character vectors.
+
+``` r
+inaugural_speeches <- data_corpus_inaugural
+
+inaugural_speeches_df <- convert(inaugural_speeches,
+                                 to = "data.frame")
+
+txt <- inaugural_speeches_df$text
+str(txt)
+```
+
+    ##  chr [1:59] "Fellow-Citizens of the Senate and of the House of Representatives:\n\nAmong the vicissitudes incident to life n"| __truncated__ ...
+
+Let’s apply the `udpipe` function to this `txt`. This function tags each
+token in each speech, based on an English-language model which will be
+downloaded into the working directory. We instruct `udpipe` to include
+the doc_ids from our **quanteda** corpus object. This will help us later
+on when we want to transform the output of our **udpipe** workflow back
+into a corpus which we can inspect with **quanteda** functions.
+As_tibble() is used to turn the output into a tibble, which is a more
+user-friendly format than the default output of **udpipe**.
+
+``` r
+parsed_tokens <-  udpipe(txt, "english", 
+                         doc_id = inaugural_speeches_df$doc_id) %>% 
+  as_tibble()
+```
+
+Let’s inspect what’s inside parsed_tokens
+
+``` r
+head(parsed_tokens)
+```
+
+    ## # A tibble: 6 × 17
+    ##   doc_id    paragraph_id sentence_id sentence start   end term_id token_id token
+    ##   <chr>            <int>       <int> <chr>    <int> <int>   <int> <chr>    <chr>
+    ## 1 1789-Was…            1           1 Fellow-…     1     6       1 1        Fell…
+    ## 2 1789-Was…            1           1 Fellow-…     7     7       2 2        -    
+    ## 3 1789-Was…            1           1 Fellow-…     8    15       3 3        Citi…
+    ## 4 1789-Was…            1           1 Fellow-…    17    18       4 4        of   
+    ## 5 1789-Was…            1           1 Fellow-…    20    22       5 5        the  
+    ## 6 1789-Was…            1           1 Fellow-…    24    29       6 6        Sena…
+    ## # ℹ 8 more variables: lemma <chr>, upos <chr>, xpos <chr>, feats <chr>,
+    ## #   head_token_id <chr>, dep_rel <chr>, deps <chr>, misc <chr>
+
+``` r
+str(parsed_tokens)
+```
+
+    ## tibble [152,420 × 17] (S3: tbl_df/tbl/data.frame)
+    ##  $ doc_id       : chr [1:152420] "1789-Washington" "1789-Washington" "1789-Washington" "1789-Washington" ...
+    ##  $ paragraph_id : int [1:152420] 1 1 1 1 1 1 1 1 1 1 ...
+    ##  $ sentence_id  : int [1:152420] 1 1 1 1 1 1 1 1 1 1 ...
+    ##  $ sentence     : chr [1:152420] "Fellow-Citizens of the Senate and of the House of Representatives:" "Fellow-Citizens of the Senate and of the House of Representatives:" "Fellow-Citizens of the Senate and of the House of Representatives:" "Fellow-Citizens of the Senate and of the House of Representatives:" ...
+    ##  $ start        : int [1:152420] 1 7 8 17 20 24 31 35 38 42 ...
+    ##  $ end          : int [1:152420] 6 7 15 18 22 29 33 36 40 46 ...
+    ##  $ term_id      : int [1:152420] 1 2 3 4 5 6 7 8 9 10 ...
+    ##  $ token_id     : chr [1:152420] "1" "2" "3" "4" ...
+    ##  $ token        : chr [1:152420] "Fellow" "-" "Citizens" "of" ...
+    ##  $ lemma        : chr [1:152420] "fellow" "-" "citizen" "of" ...
+    ##  $ upos         : chr [1:152420] "ADJ" "PUNCT" "NOUN" "ADP" ...
+    ##  $ xpos         : chr [1:152420] "JJ" "HYPH" "NNS" "IN" ...
+    ##  $ feats        : chr [1:152420] "Degree=Pos" NA "Number=Plur" NA ...
+    ##  $ head_token_id: chr [1:152420] "3" "3" "0" "6" ...
+    ##  $ dep_rel      : chr [1:152420] "amod" "punct" "root" "case" ...
+    ##  $ deps         : chr [1:152420] NA NA NA NA ...
+    ##  $ misc         : chr [1:152420] "SpaceAfter=No" "SpaceAfter=No" NA NA ...
+
+As you can see, this object is a dataframe that consists of 152420 where
+each row is a token, and each column is an annotation. For our purposes,
+the most relevant variables are:
+
+- `doc_id` contains the document in which the token appeared;
+- `token` – contains the actual token;
+- `lemma` – contains the lemmatized token;
+- `upos` – contains the part of speech of the token, such as adjective,
+  verb, noun, etc.;
+
+Let’s select those variables for further analysis.
+
+``` r
+parsed_tokens <- parsed_tokens %>% 
+  select(doc_id, token, upos, lemma)
+```
+
+Inspect how many nouns appear in the corpus
+
+``` r
+sum(parsed_tokens$upos == "NOUN")
+```
+
+    ## [1] 30639
+
+Inspect how many verbs appear in the corpus
+
+``` r
+sum(parsed_tokens$upos == "VERB")
+```
+
+    ## [1] 14842
+
+Inspect how many adjectives appear in the corpus
+
+``` r
+sum(parsed_tokens$upos == "ADJ")
+```
+
+    ## [1] 11640
+
+We can also inspect all different POS tags in one go.
+
+``` r
+table(parsed_tokens$upos)
+```
+
     ## 
-    ##                  Text Types Tokens Sentences country_iso un_session year              country continent          gdp
-    ##           Afghanistan   781   2059        86         AFG         72 2017          Afghanistan      Asia 1.954398e+10
-    ##                Angola   681   1938        59         AGO         72 2017               Angola    Africa 1.221238e+11
-    ##               Albania   838   2277        88         ALB         72 2017              Albania    Europe 1.303854e+10
-    ##               Andorra   888   2816        90         AND         72 2017              Andorra    Europe 3.012914e+09
-    ##  United Arab Emirates   759   2367        78         ARE         72 2017 United Arab Emirates      Asia 3.825751e+11
-    ##             Argentina   834   2450        90         ARG         72 2017            Argentina  Americas 6.374303e+11
-    ##               Armenia   685   1844        78         ARM         72 2017              Armenia      Asia 1.153659e+10
-    ##     Antigua & Barbuda   894   2585       103         ATG         72 2017    Antigua & Barbuda  Americas 1.510085e+09
-    ##             Australia   694   1848        92         AUS         72 2017            Australia   Oceania 1.323421e+12
-    ##               Austria   544   1460        75         AUT         72 2017              Austria    Europe 4.165957e+11
-    ##  gdp_per_capita
-    ##             550
-    ##            4100
-    ##            4538
-    ##           39147
-    ##           40699
-    ##           14398
-    ##            3937
-    ##           14803
-    ##           53800
-    ##           47291
+    ##   ADJ   ADP   ADV   AUX CCONJ   DET  INTJ  NOUN   NUM  PART  PRON PROPN PUNCT 
+    ## 11640 18998  6243  9365  6852 16562    38 30639   509  3680 13794  2480 14073 
+    ## SCONJ   SYM  VERB     X 
+    ##  2672    16 14842    17
 
-.As you can see the corpus contains 196 speeches, one from each UN
-member state. Let’s tokenise this corpus.
+An interesting tag is `PROPN`or proper noun that refers to the name (or
+part of the name) of a unique entity, be it an individual, a place, or
+an object. To get a feel for what entities we can filter out the proper
+nouns and then count and sort their lemmas using `count()` from
+**tidyverse**
 
 ``` r
-#tokenise the corpus
+propns <- parsed_tokens %>%
+  filter(upos == "PROPN")
 
-tokens_speeches <- tokens(corpus_speeches,
-                          what = "word",
-                          remove_punct = TRUE, 
-                          remove_symbols = TRUE, 
-                          remove_numbers = TRUE,
-                          remove_url = TRUE,
-                          remove_separators = TRUE,
-                          split_hyphens = FALSE,
-                          ) %>%
-  tokens_remove(stopwords(source = "smart"), padding = TRUE)
+propns %>% count(lemma, sort = TRUE)
 ```
 
-Let’s append collocations that occur 10 times or more
+    ## # A tibble: 512 × 2
+    ##    lemma         n
+    ##    <chr>     <int>
+    ##  1 States      310
+    ##  2 America     237
+    ##  3 United      170
+    ##  4 Congress    126
+    ##  5 God         107
+    ##  6 President    88
+    ##  7 Americans    75
+    ##  8 Mr.          31
+    ##  9 nation       29
+    ## 10 Chief        27
+    ## # ℹ 502 more rows
+
+Say we are only interested in the nouns in those speeches
 
 ``` r
-collocations <- tokens_speeches %>%
- # tokens_sample(size = 100, replace = FALSE) %>%
-  textstat_collocations(min_count = 10,
-                        size = 2:3) %>%
-  arrange(-lambda)
-
-head(collocations, 50)
+nouns <- parsed_tokens %>%
+  filter(upos == "NOUN")
 ```
 
-    ##                  collocation count count_nested length   lambda         z
-    ## 501              addis ababa    21           17      2 17.34648  8.623247
-    ## 502            côte d'ivoire    18           12      2 17.19621  8.540587
-    ## 503              puerto rico    18           11      2 17.19621  8.540587
-    ## 509             burkina faso    13           12      2 16.88114  8.363482
-    ## 511               inter alia    12           12      2 16.80418  8.319306
-    ## 512         nagorno karabakh    12           10      2 16.80418  8.319306
-    ## 487                 viet nam    17           14      2 16.04202  9.720097
-    ## 491               boko haram    11            4      2 15.62219  9.414328
-    ## 488             saudi arabia    13            4      2 15.27169  9.709138
-    ## 481               costa rica    22           16      2 15.19471 10.092488
-    ## 426             pope francis    21           16      2 15.14925 12.896612
-    ## 489    correspondent banking    11           11      2 15.11136  9.582287
-    ## 483              el salvador    15            6      2 15.07337  9.832292
-    ## 486               cabo verde    14           10      2 15.00668  9.779538
-    ## 479             sierra leone    26           13      2 14.99060 10.126043
-    ## 485               san marino    20           13      2 14.35439  9.780416
-    ## 158            peter thomson    78           78      2 14.04624 21.757337
-    ## 492              ban ki-moon    17           17      2 13.70661  9.410054
-    ## 339         antónio guterres    81           81      2 13.16132 15.696790
-    ## 497             donald trump    13           13      2 13.07442  8.982682
-    ## 496         ethnic cleansing    15            7      2 13.04893  8.999785
-    ## 499              saint kitts    12            7      2 12.87229  8.842356
-    ## 234          legally binding    20           20      2 12.51970 18.618964
-    ## 90           miroslav lajčák    61           61      2 12.47039 26.025428
-    ## 388                lake chad    19           17      2 12.30003 14.104419
-    ## 505               status quo    17            7      2 12.25012  8.509938
-    ## 506       ezulwini consensus    15            3      2 12.20695  8.462409
-    ## 508        high commissioner    21           19      2 12.01350  8.377984
-    ## 513            arab emirates    16           16      2 11.90543  8.271035
-    ## 329       russian federation    13            4      2 11.83767 16.130060
-    ## 514          solomon islands    18           10      2 11.77982  8.201531
-    ## 405                g-5 sahel    18           15      2 11.58662 13.444654
-    ## 211     twenty-first century    32            5      2 11.28101 19.404169
-    ## 515    seventy-first session    33            4      2 11.26847  7.903468
-    ## 433 greenhouse-gas emissions    10            7      2 11.26845 12.677382
-    ## 519           virgin islands    10            9      2 11.14473  7.684123
-    ## 69            prime minister    47           29      2 11.12419 28.344376
-    ## 432     secretary- general's    13           12      2 11.07285 12.711799
-    ## 135                 road map    36           20      2 11.01178 22.851794
-    ## 415       two-state solution    38           11      2 10.95786 13.113302
-    ## 56     territorial integrity    51           13      2 10.95371 30.237418
-    ## 44          korean peninsula    78           14      2 10.86346 33.811300
-    ## 440          north-east asia    15            2      2 10.81452 12.543627
-    ## 348         non-state actors    14            6      2 10.81044 15.436025
-    ## 148   seventy-second session   128           14      2 10.74388 22.205636
-    ## 163       ballistic missiles    14            8      2 10.68914 21.630398
-    ## 43               middle east    86           28      2 10.66141 33.962015
-    ## 521             human beings    41           13      2 10.65159  7.484469
-    ## 84            western sahara    33            9      2 10.54062 26.778202
-    ## 165         domestic product    27           27      2 10.44962 21.529558
+Let’s display their lemmas in a Wordcloud. We’ll first use the `split()`
+function from base R to divide the nouns per speech in a list. We then
+use `as.tokens()` in **quanteda** to turn that list into a tokens
+object. We can create a `dfm` and take it from there.
 
 ``` r
-tokens_speeches <- tokens_compound(tokens_speeches, collocations)
+nouns_dfm <- split(nouns$lemma, nouns$doc_id) %>% 
+  as.tokens() %>% 
+  dfm() 
+
+
+textplot_wordcloud(nouns_dfm, max_words = 50)
 ```
 
-Let’s include only those tokens that appear in the speeches of at least
-5 countries and maximum 150 countries
+![](Lab_Session_QTA_8_Answers_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+
+Let’s do the same for verbs
 
 ``` r
-dfm_speeches <- dfm(tokens_speeches) %>%
-     dfm_trim(min_docfreq = 5, 
-             max_docfreq = 150) 
+verbs <- parsed_tokens %>%
+  filter(upos == "VERB")
 
-#check the number of documents and features
-dim(dfm_speeches)
+verbs_dfm <- split(verbs$lemma, verbs$doc_id) %>% 
+  as.tokens() %>% dfm()
+
+textplot_wordcloud(verbs_dfm, max_words = 50)
 ```
 
-    ## [1]  196 4541
+![](Lab_Session_QTA_8_Answers_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
 
-## Estimating an LDA topic model
-
-Let’s estimate a topic model with 10 topics. This may take a few
-minutes, depending on your system. *k* refers to the number of topics to
-be estimated; this is a parameter determined by the researcher. The
-$\aplha$ parameter has an impact on the topic distribution in each
-document (more on that in the exercises). In order to make the results
-reproducible, we’ll use `set.seed()`. We’ll set the maximum number of
-iterations at 1000 to speed up estimation (the argument defaults to 2000
-iterations).
+If we want to stitch back together the metadata to our newly created
+`nouns_dfm` and `verbs_dfm` we can do this as follows:
 
 ``` r
-set.seed(123)
+docvars(nouns_dfm) <- inaugural_speeches_df %>% 
+  select(Year, President, FirstName, Party)
 
-lda_10 <- textmodel_lda(dfm_speeches, 
+docvars(verbs_dfm) <- inaugural_speeches_df %>%
+  select(Year, President, FirstName, Party)
+```
+
+We are now in a position to inspect these dfms. For example, we may be
+interested in what sort of verbs distinguish Republican presidents from
+Democratic presidents.
+
+``` r
+verbs_dfm_grouped <- verbs_dfm %>% 
+  dfm_group(groups = Party) %>%
+  dfm_subset(Party == "Democratic" | Party == "Republican")
+
+verb_keyness <- textstat_keyness(verbs_dfm_grouped, target = "Republican")
+
+textplot_keyness(verb_keyness,
+                 n = 10,
+                 color = c("red", "blue"))
+```
+
+![](Lab_Session_QTA_8_Answers_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+Let’s apply a topic model to the nouns
+
+``` r
+lda_10 <- textmodel_lda(nouns_dfm, 
                        k = 10,
                        alpha = 1,
-                       max_iter = 1000)
+                       max_iter = 2000)
 ```
 
-Take a look at the output of the topic model with 10 topics. For
-example, we can take a look at the 10 highest-loading terms for each of
-*k* topics.
+Let’s inspect this topic model
 
 ``` r
 terms(lda_10, 10)
 ```
 
-    ##       topic1           topic2             topic3        topic4         topic5             topic6                   
-    ##  [1,] "future"         "africa"           "caribbean"   "terrorism"    "state"            "agenda"                 
-    ##  [2,] "make"           "regard"           "government"  "syria"        "israel"           "human_rights"           
-    ##  [3,] "responsibility" "organization"     "peoples"     "region"       "europe"           "states"                 
-    ##  [4,] "common"         "security_council" "pacific"     "iraq"         "palestine"        "sustainable_development"
-    ##  [5,] "life"           "african_union"    "call"        "stability"    "territory"        "national"               
-    ##  [6,] "means"          "african"          "small"       "crisis"       "ukraine"          "implementation"         
-    ##  [7,] "women"          "resources"        "ocean"       "humanitarian" "occupation"       "commitment"             
-    ##  [8,] "live"           "mali"             "lives"       "yemen"        "security_council" "important"              
-    ##  [9,] "children"       "end"              "sustainable" "based"        "borders"          "dialogue"               
-    ## [10,] "protect"        "call"             "global"      "arab"         "military"         "regard"                 
-    ##       topic7                    topic8                         topic9       topic10        
-    ##  [1,] "global"                  "nuclear_weapons"              "government" "nations"      
-    ##  [2,] "agenda"                  "nuclear"                      "cent"       "united_states"
-    ##  [3,] "secretary-general"       "korea"                        "democracy"  "president"    
-    ##  [4,] "sustainable_development" "north_korea"                  "years"      "war"          
-    ##  [5,] "conflicts"               "weapons"                      "economy"    "solidarity"   
-    ##  [6,] "including"               "treaty"                       "social"     "peoples"      
-    ##  [7,] "reform"                  "democratic_people's_republic" "state"      "sovereignty"  
-    ##  [8,] "cooperation"             "united_states"                "justice"    "great"        
-    ##  [9,] "regional"                "republic"                     "assembly"   "mexico"       
-    ## [10,] "role"                    "make"                         "made"       "venezuela"
-
-In order to obtain the topic that loads highest on each document, we can
-use the `topics` function. We can append this as a variable to our
-`docvars`
-
-``` r
-head(topics(lda_10), 10)
-```
-
-    ##          Afghanistan               Angola              Albania              Andorra United Arab Emirates            Argentina 
-    ##              topic10               topic6               topic1               topic6               topic4               topic6 
-    ##              Armenia    Antigua & Barbuda            Australia              Austria 
-    ##               topic5               topic3               topic7               topic5 
-    ## Levels: topic1 topic2 topic3 topic4 topic5 topic6 topic7 topic8 topic9 topic10
-
-``` r
-docvars(dfm_speeches, "topic") <- topics(lda_10)
-
-# cross-table of the topic frequency
-table(docvars(dfm_speeches, "topic"))
-```
-
-    ## 
-    ##  topic1  topic2  topic3  topic4  topic5  topic6  topic7  topic8  topic9 topic10 
-    ##      22      21      26      12       7      41      31       7      16      13
-
-The topic proportions in each document are stored in an object called
-theta ($\theta$)
+    ##       topic1       topic2         topic3        topic4       topic5     
+    ##  [1,] "world"      "union"        "war"         "happiness"  "side"     
+    ##  [2,] "people"     "constitution" "force"       "mind"       "call"     
+    ##  [3,] "nation"     "territory"    "commerce"    "experiment" "price"    
+    ##  [4,] "man"        "question"     "work"        "confidence" "tax"      
+    ##  [5,] "freedom"    "law"          "power"       "order"      "sacrifice"
+    ##  [6,] "life"       "object"       "defense"     "justice"    "burden"   
+    ##  [7,] "peace"      "section"      "treaty"      "good"       "pledge"   
+    ##  [8,] "government" "nature"       "sovereignty" "gratitude"  "struggle" 
+    ##  [9,] "history"    "slavery"      "year"        "virtue"     "hour"     
+    ## [10,] "year"       "case"         "principle"   "voice"      "action"   
+    ##       topic6       topic7       topic8        topic9         topic10       
+    ##  [1,] "government" "today"      "law"         "civilization" "power"       
+    ##  [2,] "people"     "time"       "business"    "justice"      "spirit"      
+    ##  [3,] "country"    "citizen"    "policy"      "service"      "constitution"
+    ##  [4,] "power"      "nation"     "office"      "order"        "member"      
+    ##  [5,] "citizen"    "generation" "condition"   "cooperation"  "character"   
+    ##  [6,] "duty"       "work"       "question"    "ideal"        "instrument"  
+    ##  [7,] "interest"   "day"        "legislation" "today"        "officer"     
+    ##  [8,] "nation"     "child"      "race"        "republic"     "body"        
+    ##  [9,] "party"      "century"    "tariff"      "leadership"   "feeling"     
+    ## [10,] "rights"     "friend"     "citizenship" "standard"     "other"
 
 ``` r
 head(lda_10$theta, 10)
 ```
 
-    ##                          topic1     topic2      topic3      topic4     topic5      topic6      topic7      topic8     topic9
-    ## Afghanistan          0.20937500 0.02812500 0.031250000 0.092187500 0.00468750 0.062500000 0.189062500 0.028125000 0.08906250
-    ## Angola               0.04285714 0.21111111 0.053968254 0.026984127 0.01904762 0.325396825 0.139682540 0.028571429 0.07777778
-    ## Albania              0.34293948 0.01152738 0.020172911 0.046109510 0.06916427 0.090778098 0.201729107 0.057636888 0.13544669
-    ## Andorra              0.23209877 0.05185185 0.012345679 0.001234568 0.00617284 0.307407407 0.154320988 0.018518519 0.16666667
-    ## United Arab Emirates 0.07654321 0.01975309 0.013580247 0.472839506 0.01975309 0.137037037 0.100000000 0.049382716 0.03209877
-    ## Argentina            0.18158890 0.00630517 0.059268600 0.010088272 0.02648172 0.368221942 0.031525851 0.022698613 0.19167718
-    ## Armenia              0.11700183 0.04570384 0.005484461 0.049360146 0.27056673 0.255941499 0.051188300 0.027422303 0.13528336
-    ## Antigua & Barbuda    0.13892529 0.01965924 0.411533421 0.011795544 0.01703801 0.002621232 0.001310616 0.002621232 0.25557012
-    ## Australia            0.22815534 0.01779935 0.025889968 0.084142395 0.03559871 0.014563107 0.402912621 0.113268608 0.03398058
-    ## Austria              0.16079295 0.09471366 0.002202643 0.121145374 0.19383260 0.055066079 0.176211454 0.145374449 0.01321586
-    ##                         topic10
-    ## Afghanistan          0.26562500
-    ## Angola               0.07460317
-    ## Albania              0.02449568
-    ## Andorra              0.04938272
-    ## United Arab Emirates 0.07901235
-    ## Argentina            0.10214376
-    ## Armenia              0.04204753
-    ## Antigua & Barbuda    0.13892529
-    ## Australia            0.04368932
-    ## Austria              0.03744493
+    ##                     topic1     topic2      topic3     topic4      topic5
+    ## 1789-Washington 0.05960265 0.06953642 0.009933775 0.28476821 0.023178808
+    ## 1793-Washington 0.05714286 0.02857143 0.028571429 0.11428571 0.057142857
+    ## 1797-Adams      0.10899654 0.01903114 0.025951557 0.27508651 0.003460208
+    ## 1801-Jefferson  0.18491484 0.18734793 0.060827251 0.14355231 0.021897810
+    ## 1805-Jefferson  0.09551657 0.12670565 0.048732943 0.21832359 0.007797271
+    ## 1809-Madison    0.09558824 0.04044118 0.055147059 0.30882353 0.007352941
+    ## 1813-Madison    0.12318841 0.03260870 0.250000000 0.04710145 0.097826087
+    ## 1817-Monroe     0.03730273 0.06456241 0.226685796 0.03443329 0.004304161
+    ## 1821-Monroe     0.02365591 0.05591398 0.301075269 0.01720430 0.002150538
+    ## 1825-Adams      0.08743169 0.11202186 0.092896175 0.12158470 0.004098361
+    ##                    topic6      topic7      topic8      topic9    topic10
+    ## 1789-Washington 0.4304636 0.006622517 0.003311258 0.003311258 0.10927152
+    ## 1793-Washington 0.4571429 0.085714286 0.085714286 0.057142857 0.02857143
+    ## 1797-Adams      0.4740484 0.003460208 0.001730104 0.001730104 0.08650519
+    ## 1801-Jefferson  0.3333333 0.007299270 0.004866180 0.017031630 0.03892944
+    ## 1805-Jefferson  0.3742690 0.019493177 0.048732943 0.001949318 0.05847953
+    ## 1809-Madison    0.4338235 0.007352941 0.011029412 0.011029412 0.02941176
+    ## 1813-Madison    0.3405797 0.025362319 0.043478261 0.007246377 0.03260870
+    ## 1817-Monroe     0.5939742 0.002869440 0.002869440 0.010043042 0.02295552
+    ## 1821-Monroe     0.5376344 0.002150538 0.026881720 0.021505376 0.01182796
+    ## 1825-Adams      0.4890710 0.019125683 0.020491803 0.015027322 0.03825137
 
-Let’s confirm that column sums of $\theta$ add up to one.
+## Other languages
 
-``` r
-head(rowSums(lda_10$theta), 10)
-```
+**updipe** allows you to work with pre-trained language models build for
+more than 65 languages
 
-    ##          Afghanistan               Angola              Albania              Andorra United Arab Emirates            Argentina 
-    ##                    1                    1                    1                    1                    1                    1 
-    ##              Armenia    Antigua & Barbuda            Australia              Austria 
-    ##                    1                    1                    1                    1
+<figure>
+<img src="language_models.png" style="width:65.0%"
+alt="Language models" />
+<figcaption aria-hidden="true">Language models</figcaption>
+</figure>
 
-## Visualizing a LDA topic model
-
-Let’s say we are interested in topic 8 which deals (in my case) with
-nuclear weapons, treaties, north korea, etc. We can store the document
-proportions for this topic in the docvars of our dfm, and call it
-\`nuclear_weapons_topic’
+If you want to work with these models you first need to download them.
+Let’s say I want to work with a Dutch corpus
 
 ``` r
-docvars(dfm_speeches, 'nuclear_weapons_topic') <- lda_10$theta[, 8]
+udmodel_dutch <- udpipe_download_model(language = "dutch")
+
+str(udmodel_dutch)
 ```
 
-Let’s plot the nuclear weapons topic
+    ## 'data.frame':    1 obs. of  5 variables:
+    ##  $ language        : chr "dutch-alpino"
+    ##  $ file_model      : chr "/Users/hjms/Documents/Teaching/Essex/2024/Labs/Lab_8/dutch-alpino-ud-2.5-191206.udpipe"
+    ##  $ url             : chr "https://raw.githubusercontent.com/jwijffels/udpipe.models.ud.2.5/master/inst/udpipe-ud-2.5-191206/dutch-alpino-"| __truncated__
+    ##  $ download_failed : logi FALSE
+    ##  $ download_message: chr "OK"
+
+I can now start tagging with vector of Dutch documents
 
 ``` r
-topic_plot <- ggplot(docvars(dfm_speeches), aes(y = reorder(country_iso, nuclear_weapons_topic), 
-                               x = nuclear_weapons_topic)) + 
-  geom_bar(stat = "identity") + theme_minimal() + scale_x_continuous("Nuclear weapons topic") +
-  scale_y_discrete("Country") +
-  theme(axis.text.y = element_text(angle = 0), size = 0.1) + theme_minimal()
+dutch_documents <- c(d1 = "AZ wordt kampioen dit jaar",
+                     d2 = "Mark Rutte, de langstzittende premier van Nederland, is op weg naar de NAVO")
 
-print(topic_plot)
+parsed_tokens_dutch <-  udpipe(dutch_documents, udmodel_dutch) %>% 
+  as_tibble()
+
+head(parsed_tokens_dutch)
 ```
 
-![](Lab_Session_QTA_8_Answers_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+    ## # A tibble: 6 × 17
+    ##   doc_id paragraph_id sentence_id sentence    start   end term_id token_id token
+    ##   <chr>         <int>       <int> <chr>       <int> <int>   <int> <chr>    <chr>
+    ## 1 d1                1           1 AZ wordt k…     1     2       1 1        AZ   
+    ## 2 d1                1           1 AZ wordt k…     4     8       2 2        wordt
+    ## 3 d1                1           1 AZ wordt k…    10    17       3 3        kamp…
+    ## 4 d1                1           1 AZ wordt k…    19    21       4 4        dit  
+    ## 5 d1                1           1 AZ wordt k…    23    26       5 5        jaar 
+    ## 6 d2                1           1 Mark Rutte…     1     4       1 1        Mark 
+    ## # ℹ 8 more variables: lemma <chr>, upos <chr>, xpos <chr>, feats <chr>,
+    ## #   head_token_id <chr>, dep_rel <chr>, deps <chr>, misc <chr>
 
-Take a look at topic proportions for each country
+If I have already downloaded the a language, I can load it as follows
+(if the model is in the current working directory – otherwise I will
+need to give it the full path to the file)
 
 ``` r
-#append the topic proportions
-
-topic_probabilities <- lda_10$theta
-rownames(topic_probabilities) <- rownames(dfm_speeches)
-
-heatmap(as.matrix(topic_probabilities[]))
+udmodel_dutch <- udpipe_load_model(file = "dutch-alpino-ud-2.5-191206.udpipe")
 ```
-
-![](Lab_Session_QTA_8_Answers_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
-
-In a heatmap, darker colors correspond with higher proportions, whereas
-lighter colors denote lower proportions. In addition, it displays a
-clustering of countries and topics?
-
-## Estimating a Structural topic model
-
-Structural topic models allow us to model topical content and topical
-prevalence as a function of metadata. We can estimate an stm using the
-`stm()` function in the **stm** library. Let’s first estimate an stm
-without any metadata and 3 topics (NB: estimating an **stm** is a bit
-slow, hence the small number of topics)
-
-``` r
-stm_3 <- stm(dfm_speeches, 
-              data = docvars(dfm_speeches),
-              seed = 123,
-              K = 3,
-              verbose = FALSE,
-             init.type = "Spectral")
-```
-
-We can inspect the estimated topics using the `labelTopics()` function
-in the **stm** library
-
-``` r
-labelTopics(stm_3)
-```
-
-    ## Topic 1 Top Words:
-    ##       Highest Prob: nations, united_states, government, global, years, make, caribbean 
-    ##       FREX: canada, barbuda, caribbean, venezuela, haiti, indigenous_peoples, colombia 
-    ##       Lift: barbuda, caicos, hemisphere, lose, storm, turks, virgin_islands 
-    ##       Score: lose, canada, barbuda, indigenous_peoples, saint, antigua, bahamas 
-    ## Topic 2 Top Words:
-    ##       Highest Prob: terrorism, state, region, states, syria, international_community, stability 
-    ##       FREX: arab, iran, azerbaijan, ukraine, israel, occupation, da'esh 
-    ##       Lift: coup, d'état, violating, azerbaijan, israeli, kuwait, osce 
-    ##       Score: azerbaijan, kuwait, arab, israeli, iran, turkish, occupied 
-    ## Topic 3 Top Words:
-    ##       Highest Prob: agenda, sustainable_development, global, government, commitment, human_rights, implementation 
-    ##       FREX: sustainable_development, agenda, african_union, implementation, south_sudan, africa, sids 
-    ##       Lift: achieving_sustainable_development, adjust, complemented, expedite, global_development, high-level_meeting, indonesia 
-    ##       Score: indonesia, sids, samoa, pacific, agenda, asean, ocean
-
-We can also plot this model using `plot()`
-
-``` r
-plot(stm_3)
-```
-
-![](Lab_Session_QTA_8_Answers_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
-
-`findThoughts()` returns the topic documents associated with a topic
-
-``` r
-findThoughts(stm_3,texts = as.character(corpus_speeches), n = 1, topics = c(1))
-```
-
-    ## 
-    ##  Topic 1: 
-    ##       On 6 September, my small, two-island State, Antigua and Barbuda, was the victim of the ferocity of Hurricane Irma, the largest storm endured in the Atlantic in human history. The island of Barbuda was decimated, its entire population left homeless and its buildings reduced to empty shells.
-    ## Fortunately, Antigua and Barbuda was spared the full blast of Hurricane Maria just nine days later, although sustained winds of up to 60 miles per hour gave us a troubling awareness of the agony visited on the nearby islands of Dominica, Guadeloupe and Puerto Rico. Antigua and Barbuda continued to stay resilient. Having witnessed the devastation of Barbuda and the desolation of its inhabitants after the ravages of Irma, my heart bleeds for the people of the countries that have now been brutalized by Maria, and those that will suffer its cruelty in the coming days.
-    ## I have come to the General Assembly because I consider it to be important to speak to the world's representatives and to do so collectively in order to share the experience of my country, as well as the huge challenges faced by the Caribbean islands in general. Barbuda and its inhabitants were among the worst affected by Hurricane Irma in the region. Barbuda has a surface of 62 square miles. When Irma thundered over the island, it was 375 miles wide, with gale force winds of 220 miles per hour. Barbuda did not stand the faintest chance against such size, such ferocity and such intensity. The island was completely destroyed, and my Government was compelled to evacuate all of the inhabitants to Antigua.
-    ## For the first time in over 300 years, there are now no permanent residents on Barbuda. The footprints of an entire civilization have been erased by the brutality and magnitude of Irma. Everything that meant anything to the inhabitants had to be left behind - their homes, their possessions, their history, indeed, everything that defines them as a society and as a people. Mercifully, Antigua, the larger of the two islands, suffered no major damage, and it could begin to function normally within 48 hours.
-    ## Had that not been the case, how we would have coped is simply beyond imagination. Overnight, Antigua's population increased by almost 3 per cent. I know of no country that could easily cope with such an unplanned, unexpected and unscheduled increase in its population.
-    ## In addition to providing shelter, accommodation and basic necessities to the evacuated residents of Barbuda, the social services on Antigua are now under great strain. They struggle to provide school places for an additional 600 students, medical services for the elderly and a means of earning an income for the able-bodied. Naturally, the residents of Barbuda are anxious to return to their homeland. But, as I speak to the Assembly, the island remains unfit for human habitation. There is no electricity or potable water, and 95 per cent of the buildings have been destroyed or severely damaged.
-    ## Preliminary estimates have placed the cost of rebuilding Barbuda at about $250 million. That figure represents 15 per cent or more of my country's gross domestic product of approximately $1.5 billion. It is simply a stretch beyond our reach.
-    ## The President took the Chair.
-    ## Antigua and Barbuda urgently requires the assistance of the international community, including the international development and finance institutions, to accomplish the vital task of rebuilding Barbuda. And I should say that we have not outstretched the palm of our hand because we simply crave; we plead because we need.
-    ## Barbuda is not only a natural disaster; it is a humanitarian crisis that now consumes Antigua. Even as my Government and people look forward to the assistance of the better-off nations of the world, I thank those nations and persons who were first responders, particularly the Government and the people of the Bolivarian Republic of Venezuela, who went beyond the call of duty to assist. I also acknowledge the commitment of and contributions from the Government and the people of the People's Republic of China, the Governments of Cuba, the United Arab Emirates, Qatar, Canada, the Dominican Republic and sister States of the Caribbean Community, who gave generously from the little they have. That includes Dominica, which, in one wretched night, lost a significant number of precious lives and years of hard-earned development under the unrelenting battering of Hurricane Maria.
-    ## On Antigua, Barbudans are being cared for as best we can with our very limited resources. But as the period of care lengthens, not only do the conditions worsen but the cost also increases, forcing my Government to borrow money on commercial terms at high interest rates and swelling our already burdensome national debt.
-    ## The present international financial architecture is leaving small States such as mine behind. Whatever position on climate change a nation may take, the evidence of global warming is now irrefutably stronger. Two Category 5 hurricanes within 12 days, which unrelentingly pounded so many countries, can no longer be dismissed as vagaries of the weather, nor can they be explained as Nature's doing. Hurricanes are stronger and bigger because they are absorbing moisture from seas that are increasingly warmer as a result of global warming.
-    ## And that is a man-made phenomenon, attributable to those nations that consume 80 per cent or more of the world's primary energy, emitting dangerous levels of pollution into the atmosphere. All 14 Caribbean Community countries together produce less than 0.1 per cent of global emissions. We are the least of the polluters but the largest of the casualties. The unfairness, injustice and inequality of the situation are painfully obvious.
-    ## If such frequent and brutal storms are to be withstood, Caribbean islands and certain parts of the United States need to construct more resilient buildings and infrastructure than now exists. That means that the international development and financial institutions need to provide financing at concessionary rates without artificial impediments. If that does not happen, the subsequent cost in lives and property is too frightening to contemplate.
-    ## Increasingly, States such as mine are victims of an international economic and financial system that regards us merely as a numerical statistic or a mere nuisance. We are measured by the level of our income, even though it is an insufficient and unreasonable criterion for establishing vulnerability, poverty and need. Like many other small island States, my developing country is categorized as high-income, thus denying it access to concessional financing and grant funding from international financial institutions and donor Governments.
-    ## It is patently obvious that the per-capita income criterion is a skewed and flawed determinant. It should be eliminated and eliminated immediately. Because we are small economies with inadequate domestic capital formation, our countries open our doors to foreign investment, granting significant tax concessions so as to attract investments and help provide jobs to curb poverty. The consequence is that a small percentage of persons in our community, mostly expatriates, at the top end of businesses earn the largest percentage of high incomes and the mass of the population earns considerably less. In addition, Government tax revenues are significantly reduced owing to the investment concessions granted. It is time that those who control the levers of power in the economic and financial international community acknowledged that the per-capita system of measurement is discriminatory and resolved to change it. It is time that that particular swamp be drained, and now is the time for action.
-    ## In the United States, where the United Nations is located and the Assembly is gathered today, one of its early leaders, Abraham Lincoln, declared at a critical time in its history that this country could not survive "half slave and half free". He may have been speaking specifically of America and of the disunity that gripped it at the time, but he was talking about more than immorality. He was also talking about social and economic justice. Lincoln's observation is compellingly relevant to social and economic justice in the world today. Injustice and inequality breed instability. The world cannot survive with the wealthy few controlling 90 per cent of global resources. If so, its centre will not hold. Its centre will not hold if the inequality between rich and poor nations increases. It will not be stable until social and economic justice prevails.
-    ## My country and citizens do not want to beg for a living. We want to work for it. We want to earn our way, but we cannot do so if the international system refuses to provide us with the means and the tools to build our future. Access to concessional financing represents an imperative need that would give us a great leap forward. It would take us out of the spiral of debt that we are incurring owing to our repeated need to rebuild after disasters with high-cost commercial money. Where is the justice in that? In large wealthy countries borrowing occurs in capital markets at 3 per cent per annum while the so-called high-income small island States are forced to borrow commercially at 12 per cent per annum to repeatedly rebuild infrastructure damaged by hurricanes. Where is the justice in that? It is irrational and punitive to graduate a small island State that cannot pay its debts to high-income status, thereby precluding it from much-needed development financing.
-    ## The theme of the Assembly's general debate is "Focusing on people: Striving for peace and a decent life for all on a sustainable planet". That is all my people and the people of small island States want - peace and a decent life on a planet that is sustainable. We deserve nothing less, and we expect nothing less. It is in that connection that I draw attention to the fact that even in the midst of our present crisis, Antigua and Barbuda is faced with demands from a Paris Club group of wealthy countries for the settlement of $130 million in debts incurred four decades ago because concessional financing was and is still denied to us. It would be of enormous help in dealing with the plight that we now face and the daunting task of rebuilding Barbuda at a cost upwards of $250 million if those wealthy Paris Club countries would forgive or at least reduce significantly the debt that now weighs so heavily on our shoulders. It should be noted that the amount outstanding constitutes primarily accrued interest. Such a step would provide us with the fiscal space to borrow as we seek to garner every cent to recover and rebuild from Hurricane Irma and to give our people a chance to achieve a decent life in keeping with the Sustainable Development Goals.
-    ## In that same context, my small country won a trade dispute with the United States in 2004 before the World Trade Organization. That trade violation led to significant revenue losses to my country and to greater unemployment among my people. It has been 13 long years since that judgement and seven years since the final appeal by the United States resulted in a final ruling in my country's favour, and yet the United States has failed to settle. The loss of trade revenues to my small country has risen to more than $200 million. Our Government has laboured unsuccessfully for more than 13 years to reach an amicable and reasonable settlement with the United States. That is a classic case where might is right and where the rights of a small, powerless State have been trampled on.
-    ## I should mention that over the past 13 years the United States has enjoyed a trade surplus with my small country of more than $2 billion - I repeat, $2 billion. I am well aware that the prolongation of a settlement of the judgement in question is not the making of the present United States Administration, which inherited it. But in the interest of fairness, justice and good conscience, it would be beneficial to my nation in this hour of great need for the United States Government to settle that case.
-    ## In this very Hall two days ago, President Trump said of the United States,
-    ## "[W]e can no longer be taken advantage of or enter into a one-sided deal where the United States gets nothing in return" (A/72/PV.3, p. 11).
-    ## His observation, which I welcome, is equally true for the relationship with Antigua and Barbuda. Honouring its obligations to Antigua and Barbuda is not a one-sided deal in which the United States gets nothing in return, because ultimately 90 per cent of the settlement proceeds will be spent in the United States economy, as our primary source market. The United States is the greatest beneficiary of trade with my country and has been so year after year for many decades. Settling with us for more than 13 years of trade losses would take less than one year of the trade surplus that the United States' $20 trillion economy has with Antigua and Barbuda's mere $1 billion economy.
-    ## In the past few days the experience of the Caribbean islands has shown that entire ancient communities can be snuffed out overnight and the quality of their life suddenly and irreversibly set back. I remind members that for the first time in more than 300 years there is no permanent human resident on Barbuda. But my Government is determined to rebuild Barbuda, however long it takes and with whatever resources we can muster. We are determined that no Caribbean society will be extinguished and that the Caribbean nations will remain firmly on the global map. But even as we resolve, with limited means, to keep our societies alive and vibrant, we call on the international community to acknowledge its obligation to humankind and all peoples, without whom its own societies cannot prosper and will not thrive. In the words of the poet John Donne,
-    ## "Any man's death diminishes me, because I am involved in mankind, and therefore never send to know for whom the bell tolls; it tolls for thee".
-    ## As citizens of planet Earth, let us acknowledge our common humanity and work in harmony to make our world a better place.
-
-Let’s now estimate an stm but this time we include metadata. To this end
-we will first create a dummy variable that denotes whether a country’s
-gdp per capita is smaller than 10000 dollar. We will use `ifelse()` for
-this. For some countries we do not have data on GDP. In order for stm
-with metadata to work, we’ll remove those from our dfm.
-
-``` r
-docvars(dfm_speeches, "gdp_dummy") <- ifelse(docvars(dfm_speeches, "gdp_per_capita") < 10000, 1, 0)
-
-dfm_speeches <- dfm_subset(dfm_speeches, !is.na(gdp_dummy))
-```
-
-Let’s investigate if the content of estimated topics is dependent on a
-country’s income by estimating an stm with 3 topics and modeling topical
-content as a function of our gdp_dummy variable. To speed up estimation,
-we will only focus on European countries, and we let the maximum number
-of EM (expectation maximization) steps to be no more than 50. Still,
-estimating this topic model may take a few minutes.
-
-``` r
-dfm_speeches_europe <- dfm_subset(dfm_speeches, continent == "Europe")
-table(docvars(dfm_speeches_europe, "gdp_dummy"))
-```
-
-    ## 
-    ##  0  1 
-    ## 32  9
-
-``` r
-stm_3_metadata <- stm(dfm_speeches_europe, 
-                      data = docvars(dfm_speeches_europe),
-                      seed = 123,
-                      content = ~ gdp_dummy,
-                      K = 3,
-                      max.em.its = 50,
-                      verbose = TRUE,
-                      init.type = "Spectral")
-```
-
-    ## Beginning Spectral Initialization 
-    ##   Calculating the gram matrix...
-    ##   Finding anchor words...
-    ##      ...
-    ##   Recovering initialization...
-    ##      ......................................
-    ## Initialization complete.
-    ## .........................................
-    ## Completed E-Step (0 seconds). 
-    ## .....................................................................................................
-    ## Completed M-Step (5 seconds). 
-    ## Completing Iteration 1 (approx. per word bound = -7.596) 
-    ## .........................................
-    ## Completed E-Step (0 seconds). 
-    ## .....................................................................................................
-    ## Completed M-Step (5 seconds). 
-    ## Completing Iteration 2 (approx. per word bound = -7.548, relative change = 6.302e-03) 
-    ## .........................................
-    ## Completed E-Step (0 seconds). 
-    ## .....................................................................................................
-    ## Completed M-Step (5 seconds). 
-    ## Completing Iteration 3 (approx. per word bound = -7.508, relative change = 5.280e-03) 
-    ## .........................................
-    ## Completed E-Step (0 seconds). 
-    ## .....................................................................................................
-    ## Completed M-Step (5 seconds). 
-    ## Completing Iteration 4 (approx. per word bound = -7.489, relative change = 2.630e-03) 
-    ## .........................................
-    ## Completed E-Step (0 seconds). 
-    ## .....................................................................................................
-    ## Completed M-Step (5 seconds). 
-    ## Completing Iteration 5 (approx. per word bound = -7.479, relative change = 1.300e-03) 
-    ## Topic 1: adopt, connection, repeat, disaster, greatest 
-    ##  Topic 2: russia, arsenal, gave, imposing, suppression 
-    ##  Topic 3: republic, inclusion, treated, mediation, political_solution 
-    ## Aspect 1: press, primarily, resolving, recent_weeks, pressure 
-    ##  Aspect 2: annex, communiqué, delegations, divided, guidelines 
-    ## .........................................
-    ## Completed E-Step (0 seconds). 
-    ## .....................................................................................................
-    ## Completed M-Step (5 seconds). 
-    ## Completing Iteration 6 (approx. per word bound = -7.474, relative change = 6.204e-04) 
-    ## .........................................
-    ## Completed E-Step (0 seconds). 
-    ## .....................................................................................................
-    ## Completed M-Step (5 seconds). 
-    ## Completing Iteration 7 (approx. per word bound = -7.472, relative change = 2.770e-04) 
-    ## .........................................
-    ## Completed E-Step (0 seconds). 
-    ## .....................................................................................................
-    ## Completed M-Step (5 seconds). 
-    ## Completing Iteration 8 (approx. per word bound = -7.472, relative change = 6.030e-05) 
-    ## .........................................
-    ## Completed E-Step (0 seconds). 
-    ## .....................................................................................................
-    ## Completed M-Step (5 seconds). 
-    ## Completing Iteration 9 (approx. per word bound = -7.471, relative change = 9.102e-05) 
-    ## .........................................
-    ## Completed E-Step (0 seconds). 
-    ## .....................................................................................................
-    ## Completed M-Step (5 seconds). 
-    ## Model Converged
-
-Using `estimateEffect()` we estimate a regression where documents are
-the units, the outcome is the proportion of each document about a topic
-in an STM model and the covariates are document-meta data. This allows
-us to compare topic proportions for both groups of countries (i.e., rich
-and poor)
-
-``` r
-eff_gdp <- estimateEffect(
-  1:3 ~ gdp_dummy, 
-  stmobj = stm_3_metadata, 
-  meta = docvars(dfm_speeches_europe))
-```
-
-Let’s plot these topic proportions
-
-``` r
-plot(eff_gdp, "gdp_dummy",
-     cov.value1 = "< 10000",
-     cov.value2 = "> 10000",
-     method = "difference")
-```
-
-![](Lab_Session_QTA_8_Answers_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
-We don’t see any noticeable differences here but keep in mind that we
-estimated this model on only a small number
-
-## Seeded LDA
-
-In a last step, let’s estimate a seeded topic model. This topic model is
-semi-supervised, and requires a set of dictionary words to structure
-each topic. We’ll use a very short dictionary of four topics.
-
-``` r
-dictionary <- dictionary(list(terrorism = c("terroris*"), 
-                              environment = c("sustainable_development", "global_warming"),
-                              migration = c("migra*", "refugee"),
-                              economy = c("econo*", "development")))
-```
-
-Now let’s run the `seededlda()` function and inspect the model output
-
-``` r
-lda_seed <- textmodel_seededlda(dfm_speeches, 
-                                dictionary, 
-                                batch_size = 0.01, 
-                                auto_iter = TRUE,
-                                verbose = FALSE)
-
-terms(lda_seed)
-```
-
-    ##       terrorism                 environment               migration    economy               
-    ##  [1,] "terrorism"               "sustainable_development" "migration"  "economy"             
-    ##  [2,] "terrorist"               "global_warming"          "migrants"   "economic_growth"     
-    ##  [3,] "terrorists"              "agenda"                  "refugee"    "economies"           
-    ##  [4,] "terrorist_groups"        "regard"                  "migrant"    "economic_development"
-    ##  [5,] "terrorist_attacks"       "organization"            "migratory"  "economic_social"     
-    ##  [6,] "terrorist_organizations" "commitment"              "migrations" "economic_community"  
-    ##  [7,] "region"                  "human_rights"            "make"       "economic_commercial" 
-    ##  [8,] "state"                   "implementation"          "future"     "economic_cooperation"
-    ##  [9,] "states"                  "international_community" "global"     "economically"        
-    ## [10,] "military"                "republic"                "years"      "economic_recovery"
-
-``` r
-head(lda_seed$theta, 10)
-```
-
-    ##                       terrorism environment migration     economy
-    ## Afghanistan          0.24604430  0.15585443 0.4691456 0.128955696
-    ## Angola               0.12620579  0.61816720 0.1197749 0.135852090
-    ## Albania              0.13338192  0.26311953 0.4905248 0.112973761
-    ## Andorra              0.02680798  0.56421446 0.3073566 0.101620948
-    ## United Arab Emirates 0.50436409  0.25623441 0.1714464 0.067955112
-    ## Argentina            0.08726115  0.43630573 0.3000000 0.176433121
-    ## Armenia              0.34786642  0.36641929 0.2384045 0.047309833
-    ## Antigua & Barbuda    0.04569536  0.08013245 0.1913907 0.682781457
-    ## Australia            0.19590164  0.23360656 0.4827869 0.087704918
-    ## Austria              0.28811659  0.29484305 0.4159193 0.001121076
-
-The `seededlda()` package also allows for unseeded topics. If we want to
-include 6 unseeded topics, we add the argument `residual = 6`
-
-``` r
-lda_seed_res <- textmodel_seededlda(dfm_speeches, 
-                                    dictionary, 
-                                    residual = 6, 
-                                    batch_size = 0.01, 
-                                    auto_iter = TRUE,
-                                    verbose = FALSE)
-
-terms(lda_seed_res)
-```
-
-    ##       terrorism                 environment               migration     economy                other1           other2          
-    ##  [1,] "terrorism"               "sustainable_development" "migration"   "economy"              "human_rights"   "nations"       
-    ##  [2,] "terrorist"               "global_warming"          "migrants"    "economic_growth"      "states"         "future"        
-    ##  [3,] "terrorists"              "agenda"                  "refugee"     "economies"            "regard"         "history"       
-    ##  [4,] "terrorist_groups"        "action"                  "migrant"     "economic_development" "agenda"         "responsibility"
-    ##  [5,] "terrorist_attacks"       "global"                  "migratory"   "economic_social"      "republic"       "rights"        
-    ##  [6,] "terrorist_organizations" "call"                    "migrations"  "economic_community"   "dialogue"       "make"          
-    ##  [7,] "region"                  "peoples"                 "israel"      "economic_commercial"  "commitment"     "live"          
-    ##  [8,] "state"                   "paris_agreement"         "north_korea" "economic_cooperation" "implementation" "citizens"      
-    ##  [9,] "stability"               "sustainable"             "military"    "economically"         "national"       "respect"       
-    ## [10,] "iraq"                    "recent"                  "europe"      "economic_recovery"    "president"      "great"         
-    ##       other3     other4             other5              other6         
-    ##  [1,] "state"    "africa"           "global"            "united_states"
-    ##  [2,] "energy"   "african_union"    "security_council"  "caribbean"    
-    ##  [3,] "citizens" "african"          "secretary-general" "cuba"         
-    ##  [4,] "social"   "security_council" "effective"         "government"   
-    ##  [5,] "public"   "mali"             "conflict"          "solidarity"   
-    ##  [6,] "dialogue" "call"             "nuclear_weapons"   "mexico"       
-    ##  [7,] "years"    "organization"     "reform"            "destruction"  
-    ##  [8,] "year"     "situation"        "cooperation"       "peoples"      
-    ##  [9,] "water"    "libya"            "organization"      "america"      
-    ## [10,] "cent"     "force"            "multilateralism"   "damage"
-
-``` r
-head(lda_seed_res$theta, 10)
-```
-
-    ##                         terrorism  environment   migration     economy       other1     other2      other3      other4
-    ## Afghanistan          0.1614173228 0.0590551181 0.003937008 0.107874016 0.0007874016 0.22598425 0.287401575 0.018110236
-    ## Angola               0.0824000000 0.0824000000 0.000800000 0.143200000 0.3976000000 0.00080000 0.024800000 0.125600000
-    ## Albania              0.0660377358 0.0224963716 0.038461538 0.156023222 0.1052249637 0.36937591 0.068940493 0.019593614
-    ## Andorra              0.0093167702 0.0739130435 0.008074534 0.174534161 0.2975155280 0.14968944 0.101242236 0.000621118
-    ## United Arab Emirates 0.4714285714 0.0180124224 0.068944099 0.077639752 0.2031055901 0.06397516 0.011801242 0.000621118
-    ## Argentina            0.0196700508 0.0590101523 0.009517766 0.161802030 0.3381979695 0.13261421 0.152918782 0.001903553
-    ## Armenia              0.0673431734 0.0009225092 0.218634686 0.189114391 0.3385608856 0.09870849 0.050738007 0.030442804
-    ## Antigua & Barbuda    0.0006596306 0.0349604222 0.009894459 0.158970976 0.0006596306 0.12598945 0.140501319 0.004617414
-    ## Australia            0.1199021207 0.0872756933 0.088907015 0.093800979 0.0367047308 0.18189233 0.008972268 0.015497553
-    ## Austria              0.1280623608 0.0011135857 0.257238307 0.001113586 0.0612472160 0.14587973 0.001113586 0.099109131
-    ##                           other5       other6
-    ## Afghanistan          0.133070866 0.0023622047
-    ## Angola               0.098400000 0.0440000000
-    ## Albania              0.108127721 0.0457184325
-    ## Andorra              0.184472050 0.0006211180
-    ## United Arab Emirates 0.035403727 0.0490683230
-    ## Argentina            0.022208122 0.1021573604
-    ## Armenia              0.002767528 0.0027675277
-    ## Antigua & Barbuda    0.005936675 0.5178100264
-    ## Australia            0.366231648 0.0008156607
-    ## Austria              0.295100223 0.0100222717
 
 ## Exercises
 
-Estimate an LDA model with 5 topics on `dfm_speeches` and alpha = 1.
-Call the model `lda_5`
+For these exercises we will work with the `parsed_tokens` dataframe that
+we created in the above script.
+
+1.  Create a dataframe `adjs` that contains all adjectives that appear
+    in the corpus of inaugural speeches.
 
 ``` r
-lda_5 <- textmodel_lda(dfm_speeches, 
-                       k = 5,
-                       alpha = 1)
+adjs <- parsed_tokens %>%
+  filter(upos == "ADJ")
 ```
 
-Display the 10 highest loading terms for each topic
+2.  Display the most occurring adjectives in the inaugural speeches
+    using `count()`
 
 ``` r
-terms(lda_5, 10)
+adjs %>% count(lemma, sort = TRUE)
 ```
 
-    ##       topic1          topic2     topic3                    topic4         topic5       
-    ##  [1,] "caribbean"     "future"   "sustainable_development" "government"   "terrorism"  
-    ##  [2,] "government"    "nations"  "agenda"                  "regard"       "states"     
-    ##  [3,] "peoples"       "years"    "human_rights"            "republic"     "state"      
-    ##  [4,] "small"         "make"     "cooperation"             "africa"       "region"     
-    ##  [5,] "united_states" "citizens" "global"                  "dialogue"     "iraq"       
-    ##  [6,] "action"        "children" "important"               "president"    "israel"     
-    ##  [7,] "planet"        "history"  "conflicts"               "national"     "syria"      
-    ##  [8,] "access"        "war"      "including"               "commitment"   "sovereignty"
-    ##  [9,] "year"          "cent"     "role"                    "organization" "based"      
-    ## [10,] "cuba"          "past"     "regional"                "social"       "stability"
+    ## # A tibble: 1,788 × 2
+    ##    lemma        n
+    ##    <chr>    <int>
+    ##  1 great      334
+    ##  2 other      268
+    ##  3 new        245
+    ##  4 own        244
+    ##  5 public     217
+    ##  6 free       182
+    ##  7 american   163
+    ##  8 fellow     151
+    ##  9 such       147
+    ## 10 national   141
+    ## # ℹ 1,778 more rows
 
-Show the topic distributions of `lda_5` in the first 20 documents.
+3.  Group the the adjectives by speech and turn them into a dataframe
+    called `adjs_dfm`.
 
 ``` r
-head(lda_5$theta, 20)
+adjs_dfm <- split(adjs$lemma, adjs$doc_id) %>% 
+  as.tokens() %>% dfm()
 ```
 
-    ##                          topic1     topic2      topic3      topic4      topic5
-    ## Afghanistan          0.07559055 0.44566929 0.193700787 0.141732283 0.143307087
-    ## Angola               0.10240000 0.07680000 0.334400000 0.404800000 0.081600000
-    ## Albania              0.04354136 0.36284470 0.330914369 0.164005806 0.098693759
-    ## Andorra              0.05341615 0.23726708 0.412422360 0.286956522 0.009937888
-    ## United Arab Emirates 0.03229814 0.14037267 0.212422360 0.111801242 0.503105590
-    ## Argentina            0.10659898 0.22842640 0.253807107 0.359137056 0.052030457
-    ## Armenia              0.02767528 0.17158672 0.206642066 0.324723247 0.269372694
-    ## Antigua & Barbuda    0.54221636 0.34300792 0.007915567 0.081794195 0.025065963
-    ## Australia            0.08156607 0.38825449 0.422512235 0.008156607 0.099510604
-    ## Austria              0.01336303 0.25612472 0.325167038 0.071269488 0.334075724
-    ## Azerbaijan           0.00620155 0.21705426 0.026356589 0.147286822 0.603100775
-    ## Burundi              0.06148867 0.13268608 0.187702265 0.459546926 0.158576052
-    ## Belgium              0.05928237 0.33853354 0.215288612 0.232449298 0.154446178
-    ## Benin                0.05154639 0.08247423 0.252577320 0.595360825 0.018041237
-    ## Burkina Faso         0.02918587 0.10906298 0.258064516 0.520737327 0.082949309
-    ## Bangladesh           0.14683153 0.13137558 0.338485317 0.196290572 0.187017002
-    ## Bulgaria             0.01928783 0.03560831 0.577151335 0.224035608 0.143916914
-    ## Bahrain              0.02355623 0.07902736 0.183130699 0.259118541 0.455167173
-    ## Bahamas              0.41685649 0.11731207 0.243735763 0.212984055 0.009111617
-    ## Bosnia & Herzegovina 0.02906209 0.25759577 0.354029062 0.217965654 0.141347424
-
-Estimate another model with 5 topics, but this time with an alpha
-parameter equal to 10. Call it `lda_5_alpha_10`
+4.  Append Year, President, FirstName and Party from
+    `inaugural_speeches_df` as docvars to `adjs_dfm`
 
 ``` r
-lda_5_alpha_10 <- textmodel_lda(dfm_speeches, 
-                               k = 5,
-                               alpha = 10)
+docvars(adjs_dfm) <- inaugural_speeches_df %>%
+  select(Year, President, FirstName, Party)
 ```
 
-Show the topic distributions of `lda_5_alpha_10` in the first 20
-documents. How do these topic distributions compare to those in `lda_5`.
-What do you think the alpha parameter has.
+5.  Inspect `adjs_dfm` using the NRC Emotion Association Lexicon. If you
+    don’t recall how to do this, have a look back at lab session 4. Call
+    the output of `dfm_lookuop` as `dfm_inaugural_NRC`.
 
 ``` r
-head(lda_5_alpha_10$theta, 20)
+dfm_inaugural_NRC <- dfm_lookup(adjs_dfm, 
+                                dictionary = data_dictionary_NRC)
+
+head(dfm_inaugural_NRC)
 ```
 
-    ##                          topic1     topic2     topic3     topic4     topic5
-    ## Afghanistan          0.36911765 0.15441176 0.21764706 0.11617647 0.14264706
-    ## Angola               0.08208955 0.15671642 0.25671642 0.34328358 0.16119403
-    ## Albania              0.32425068 0.15803815 0.24114441 0.14577657 0.13079019
-    ## Andorra              0.23294118 0.05764706 0.34235294 0.23058824 0.13647059
-    ## United Arab Emirates 0.15647059 0.46470588 0.15764706 0.12117647 0.10000000
-    ## Argentina            0.19807923 0.08283313 0.20528211 0.34813926 0.16566627
-    ## Armenia              0.12606474 0.32197615 0.16695060 0.27768313 0.10732538
-    ## Antigua & Barbuda    0.20672478 0.09464508 0.02615193 0.07970112 0.59277709
-    ## Australia            0.32978723 0.22188450 0.30699088 0.04863222 0.09270517
-    ## Austria              0.21255061 0.30161943 0.27530364 0.14372470 0.06680162
-    ## Azerbaijan           0.13623188 0.58550725 0.08115942 0.10144928 0.09565217
-    ## Burundi              0.14027149 0.21116139 0.18853695 0.35143288 0.10859729
-    ## Belgium              0.29446064 0.19241983 0.19825073 0.20699708 0.10787172
-    ## Benin                0.09237875 0.10854503 0.15242494 0.44341801 0.20323326
-    ## Burkina Faso         0.10344828 0.10919540 0.19827586 0.47844828 0.11063218
-    ## Bangladesh           0.12861272 0.27456647 0.23121387 0.13294798 0.23265896
-    ## Bulgaria             0.07093185 0.17385257 0.47844228 0.21140473 0.06536857
-    ## Bahrain              0.07567965 0.50183688 0.14548126 0.19324026 0.08376194
-    ## Bahamas              0.10075840 0.07150596 0.19934995 0.19393283 0.43445287
-    ## Bosnia & Herzegovina 0.25062344 0.15461347 0.28054863 0.18079800 0.13341646
+    ## Document-feature matrix of: 6 documents, 10 features (6.67% sparse) and 4 docvars.
+    ##                  features
+    ## docs              anger anticipation disgust fear joy negative positive sadness
+    ##   1789-Washington     1           13       4    1  11        7       43       5
+    ##   1793-Washington     0            1       0    0   1        1        4       0
+    ##   1797-Adams          4           24       5    7  22       16       64       3
+    ##   1801-Jefferson      7           15       8   12  18       14       55       9
+    ##   1805-Jefferson      8           26       7    5  12       14       54       6
+    ##   1809-Madison        6           19       4    8  19       18       43       4
+    ##                  features
+    ## docs              surprise trust
+    ##   1789-Washington        5    24
+    ##   1793-Washington        1     4
+    ##   1797-Adams             9    40
+    ##   1801-Jefferson         6    29
+    ##   1805-Jefferson         8    32
+    ##   1809-Madison           6    20
 
-## Optional
-
-Estimate an stm with 5 topics, using the `europe` variable as metadata.
-Call it `stm_5_europe`. NB: You can create a binary variable of `europe`
-using the `continent` variable in document level metadata and the
-`ifelse()` function.
+6.  Add the count of fear words as a variable `fear` to the docvars of
+    `adjs_dfm`
 
 ``` r
-docvars(dfm_speeches, "europe") <- ifelse(docvars(dfm_speeches, "continent") == "Europe", 1, 0)
+docvars(adjs_dfm, "fear") <- dfm_inaugural_NRC[,4]
 ```
 
-We’ll set the maximum number of iterations at 50 so as to speed up the
-process.
+**Advanced**
+
+7.  Use tidyverse functions to display the mean number of fear words for
+    Republican and Democratic presidents (NB: normally we would divide
+    this number by the total number of tokens in a speech). Have a look
+    at [this link](https://dplyr.tidyverse.org/reference/group_by.html)
+    for more info.
 
 ``` r
-stm_5_metadata <- stm(dfm_speeches,
-                     data = docvars(dfm_speeches),
-                     seed = 123,
-                     content = ~ europe,
-                     K = 5,
-                     max.em.its = 50,
-                     verbose = FALSE)
+data <- docvars(adjs_dfm)
+
+data_by_party <- data %>%
+  group_by(Party) %>%
+  filter(Party == "Republican" | Party == "Democratic") %>%
+  summarise(mean_fear = mean(fear))
+
+data_by_party
 ```
 
-Plot these topics
+    ## # A tibble: 2 × 2
+    ##   Party      mean_fear
+    ##   <fct>          <dbl>
+    ## 1 Democratic      7.09
+    ## 2 Republican      8.46
+
+8.  Download a language model of your choice and inspect a vector of a
+    few sentences using `udpipe`
 
 ``` r
-plot(stm_5_metadata)
+udmodel_german <- udpipe_download_model(language = "german")
+
+
+german_documents <- c(d1 = "Ich bin ein Berliner",
+                      d2 = "Wie geht es dir")
+
+parsed_tokens_german <-  udpipe(german_documents, udmodel_german) %>% 
+  as_tibble()
+
+head(parsed_tokens_german)
 ```
 
-![](Lab_Session_QTA_8_Answers_files/figure-gfm/unnamed-chunk-31-1.png)<!-- -->
-
-Using `estimateEffect()` we estimate a regression where documents are
-the units, the outcome is the proportion of each document about a topic
-in an STM model and the covariate is the europe variable. Call the
-output `eff_europe`.
-
-``` r
-eff_europe <- estimateEffect(
-  1:5 ~ europe,
-  stmobj = stm_5_metadata,
-  meta = docvars(dfm_speeches))
-```
-
-Let’s plot these topic proportions
-
-``` r
-plot(eff_europe, "europe",
-    cov.value1 = "Europe",
-    cov.value2 = "Other",
-    method = "difference")
-```
-
-![](Lab_Session_QTA_8_Answers_files/figure-gfm/unnamed-chunk-33-1.png)<!-- -->
+    ## # A tibble: 6 × 17
+    ##   doc_id paragraph_id sentence_id sentence    start   end term_id token_id token
+    ##   <chr>         <int>       <int> <chr>       <int> <int>   <int> <chr>    <chr>
+    ## 1 d1                1           1 Ich bin ei…     1     3       1 1        Ich  
+    ## 2 d1                1           1 Ich bin ei…     5     7       2 2        bin  
+    ## 3 d1                1           1 Ich bin ei…     9    11       3 3        ein  
+    ## 4 d1                1           1 Ich bin ei…    13    20       4 4        Berl…
+    ## 5 d2                1           1 Wie geht e…     1     3       1 1        Wie  
+    ## 6 d2                1           1 Wie geht e…     5     8       2 2        geht 
+    ## # ℹ 8 more variables: lemma <chr>, upos <chr>, xpos <chr>, feats <chr>,
+    ## #   head_token_id <chr>, dep_rel <chr>, deps <chr>, misc <chr>

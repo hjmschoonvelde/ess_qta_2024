@@ -1,5 +1,5 @@
 ---
-title: "QTA Day 8: Topic models"
+title: "QTA Day 8: NLP processing in R"
 output:
   github_document:
   html_document:
@@ -12,389 +12,331 @@ date: "`r format(Sys.time(), '%d %B, %Y')`"
 knitr::opts_chunk$set(echo = TRUE, results = TRUE, warning = FALSE)
 ```
 
-This document gives some examples of how to estimate LDA, STM and semisupervised topic models in `R`. For these examples, we will use the corpus `data_corpus_ungd2017` which contains the speeches from the UN General Assembly in 2017 and is available in **quanteda.corpora**. 
+The goal of today's lab session is to inspect the functionality of the **udpipe** library. **UDPipe** (Wijffels, 2022) offers 'language-agnostic tokenization, tagging, lemmatization and dependency parsing of raw text'. We will focus on tagging and lemmatization in particular and how these pre-processing steps may make further analysis more precise. Lemmatizing generally works better than stemming, especially for inflected languages such as German or French. Part-of-Speech (POS) tags identify the type of word (noun, verb, etc) so it can be used to e.g. analyse only the verbs (actions) or adjectives and adverbs (descriptions).
 
-Let's load necessary libraries first. We will estimate LDA topic models using the **seededlda** library and structural topic models using the **stm** library.
+Another library that was developed by the quanteda team and that has similar functionality is **spacyr** (Benoit & Matsuo, 2020), an R wrapper around the spaCy package in Python. See this [link](https://spacyr.quanteda.io/articles/using_spacyr.html) for more information on using **spacyr**.
 
+Let's load required libraries first.
 
 ```{r, echo = TRUE, results = 'verbatim', warning = FALSE, message = FALSE}
 
 #load libraries
-library(quanteda)
-library(quanteda.textmodels)
-library(quanteda.textplots)
-library(quanteda.corpora)
-library(quanteda.textstats)
-library(seededlda)
-library(stm)
-library(ggplot2)
 library(tidyverse)
-
-corpus_speeches <- data_corpus_ungd2017
-
-summary(corpus_speeches, n = 10)
+library(quanteda)
+library(quanteda.textplots)
+library(quanteda.textmodels)
+library(quanteda.textstats)
+library(quanteda.sentiment)
+library(seededlda)
+library(udpipe)
 
 ```
-.As you can see the corpus contains 196 speeches, one from each UN member state. Let's tokenise this corpus. 
+
+The primary challenges for our purposes is to communicate between **udpipe** and **quanteda**. In the following code block we first turn our corpus into a dataframe called `inaugural_speeches_df` and save the speeches -- which are now stored in `inaugural_speeches_df$text` -- as a character vector called txt. **udpipe** works with character vectors. 
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-#tokenise the corpus
+inaugural_speeches <- data_corpus_inaugural
 
-tokens_speeches <- tokens(corpus_speeches,
-                          what = "word",
-                          remove_punct = TRUE, 
-                          remove_symbols = TRUE, 
-                          remove_numbers = TRUE,
-                          remove_url = TRUE,
-                          remove_separators = TRUE,
-                          split_hyphens = FALSE,
-                          ) %>%
-  tokens_remove(stopwords(source = "smart"), padding = TRUE)
+inaugural_speeches_df <- convert(inaugural_speeches,
+                                 to = "data.frame")
+
+txt <- inaugural_speeches_df$text
+str(txt)
 
 ```
 
-Let's append collocations that occur 10 times or more
+Let's apply the `udpipe` function to this `txt`. This function tags each token in each speech, based on an English-language model which will be downloaded into the working directory. We instruct `udpipe` to include the doc_ids from our **quanteda** corpus object. This will help us later on when we want to transform the output of our **udpipe** workflow back into a corpus which we can inspect with **quanteda** functions. As_tibble() is used to turn the output into a tibble, which is a more user-friendly format than the default output of **udpipe**.
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-collocations <- tokens_speeches %>%
- # tokens_sample(size = 100, replace = FALSE) %>%
-  textstat_collocations(min_count = 10,
-                        size = 2:3) %>%
-  arrange(-lambda)
-
-head(collocations, 50)
-
-tokens_speeches <- tokens_compound(tokens_speeches, collocations)
+parsed_tokens <-  udpipe(txt, "english", 
+                         doc_id = inaugural_speeches_df$doc_id) %>% 
+  as_tibble()
 
 ```
 
-Let's include only those tokens that appear in the speeches of at least 5 countries and maximum 150 countries
+Let's inspect what's inside parsed_tokens
 
 ```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-dfm_speeches <- dfm(tokens_speeches) %>%
-     dfm_trim(min_docfreq = 5, 
-             max_docfreq = 150) 
+head(parsed_tokens)
 
-#check the number of documents and features
-dim(dfm_speeches)
-
+str(parsed_tokens)
 
 ```
 
-## Estimating an LDA topic model
+As you can see, this object is a dataframe that consists of 152420 where each row is a token, and each column is an annotation. For our purposes, the most relevant variables are:
 
-Let's estimate a topic model with 10 topics. This may take a few minutes, depending on your system. _k_ refers to the number of topics to be estimated; this is a parameter determined by the researcher. The $\aplha$ parameter has an impact on the topic distribution in each document (more on that in the exercises). In order to make the results reproducible, we'll use `set.seed()`. We'll set the maximum number of iterations at 1000 to speed up estimation (the argument defaults to 2000 iterations).
+ - `doc_id` contains the document in which the token appeared;
+ - `token` -- contains the actual token;
+ - `lemma` -- contains the lemmatized token;
+ - `upos` -- contains the part of speech of the token, such as adjective, verb, noun, etc.;
+ 
+Let's select those variables for further analysis. 
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-set.seed(123)
+parsed_tokens <- parsed_tokens %>% 
+  select(doc_id, token, upos, lemma)
 
-lda_10 <- textmodel_lda(dfm_speeches, 
+```
+
+Inspect how many nouns appear in the corpus
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+sum(parsed_tokens$upos == "NOUN")
+
+```
+
+Inspect how many verbs appear in the corpus
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+sum(parsed_tokens$upos == "VERB")
+
+```
+
+Inspect how many adjectives appear in the corpus
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+sum(parsed_tokens$upos == "ADJ")
+
+```
+
+We can also inspect all different POS tags in one go. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+table(parsed_tokens$upos)
+
+```
+An interesting tag is `PROPN`or proper noun that refers to the name (or part of the name) of a unique entity, be it an individual, a place, or an object. To get a feel for what entities we can filter out the proper nouns and then count and sort their lemmas using `count()` from **tidyverse**
+
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+propns <- parsed_tokens %>%
+  filter(upos == "PROPN")
+
+propns %>% count(lemma, sort = TRUE)
+
+```
+
+Say we are only interested in the nouns in those speeches
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+nouns <- parsed_tokens %>%
+  filter(upos == "NOUN")
+
+```
+
+Let's display their lemmas in a Wordcloud. We'll first use the `split()` function from base R to divide the nouns per speech in a list. We then use `as.tokens()` in **quanteda** to turn that list into a tokens object. We can create a `dfm` and take it from there. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+nouns_dfm <- split(nouns$lemma, nouns$doc_id) %>% 
+  as.tokens() %>% 
+  dfm() 
+
+
+textplot_wordcloud(nouns_dfm, max_words = 50)
+
+```
+
+
+Let's do the same for verbs 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+verbs <- parsed_tokens %>%
+  filter(upos == "VERB")
+
+verbs_dfm <- split(verbs$lemma, verbs$doc_id) %>% 
+  as.tokens() %>% dfm()
+
+textplot_wordcloud(verbs_dfm, max_words = 50)
+
+```
+
+If we want to stitch back together the metadata to our newly created `nouns_dfm` and `verbs_dfm` we can do this as follows:
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+docvars(nouns_dfm) <- inaugural_speeches_df %>% 
+  select(Year, President, FirstName, Party)
+
+docvars(verbs_dfm) <- inaugural_speeches_df %>%
+  select(Year, President, FirstName, Party)
+
+```
+
+We are now in a position to inspect these dfms. For example, we may be interested in what sort of verbs distinguish Republican presidents from Democratic presidents.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+verbs_dfm_grouped <- verbs_dfm %>% 
+  dfm_group(groups = Party) %>%
+  dfm_subset(Party == "Democratic" | Party == "Republican")
+
+verb_keyness <- textstat_keyness(verbs_dfm_grouped, target = "Republican")
+
+textplot_keyness(verb_keyness,
+                 n = 10,
+                 color = c("red", "blue"))
+
+```
+Let's apply a topic model to the nouns
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+lda_10 <- textmodel_lda(nouns_dfm, 
                        k = 10,
                        alpha = 1,
-                       max_iter = 1000)
-
+                       max_iter = 2000)
 
 ```
 
-Take a look at the output of the topic model with 10 topics. For example, we can take a look at the 10 highest-loading terms for each of *k* topics.
+Let's inspect this topic model
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
 terms(lda_10, 10)
-
 ```
 
-In order to obtain the topic that loads highest on each document, we can use the `topics` function. We can append this as a variable to our `docvars`
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-head(topics(lda_10), 10)
-
-docvars(dfm_speeches, "topic") <- topics(lda_10)
-
-# cross-table of the topic frequency
-table(docvars(dfm_speeches, "topic"))
-
-```
-
-The topic proportions in each document are stored in an object called theta ($\theta$)
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 head(lda_10$theta, 10)
 ```
+## Other languages
 
-Let's confirm that column sums of $\theta$ add up to one. 
+**updipe** allows you to work with pre-trained language models build for more than 65 languages 
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+![Language models]( language_models.png ){ width=65% }
 
-head(rowSums(lda_10$theta), 10)
+
+If you want to work with these models you first need to download them. Let's say I want to work with a Dutch corpus
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+udmodel_dutch <- udpipe_download_model(language = "dutch")
+
+str(udmodel_dutch)
 ```
 
-## Visualizing a LDA topic model
+I can now start tagging with vector of Dutch documents
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-Let's say we are interested in topic 8 which deals (in my case) with nuclear weapons, treaties, north korea, etc. We can store the document proportions for this topic in the docvars of our dfm, and call it `nuclear_weapons_topic'
+dutch_documents <- c(d1 = "AZ wordt kampioen dit jaar",
+                     d2 = "Mark Rutte, de langstzittende premier van Nederland, is op weg naar de NAVO")
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
- 
-docvars(dfm_speeches, 'nuclear_weapons_topic') <- lda_10$theta[, 8]
+parsed_tokens_dutch <-  udpipe(dutch_documents, udmodel_dutch) %>% 
+  as_tibble()
 
-```
-
-Let's plot the nuclear weapons topic
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-topic_plot <- ggplot(docvars(dfm_speeches), aes(y = reorder(country_iso, nuclear_weapons_topic), 
-                               x = nuclear_weapons_topic)) + 
-  geom_bar(stat = "identity") + theme_minimal() + scale_x_continuous("Nuclear weapons topic") +
-  scale_y_discrete("Country") +
-  theme(axis.text.y = element_text(angle = 0), size = 0.1) + theme_minimal()
-
-print(topic_plot)
+head(parsed_tokens_dutch)
 
 ```
 
 
-Take a look at topic proportions for each country
+If I have already downloaded the a language, I can load it as follows (if the model is in the current working directory -- otherwise I will need to give it the full path to the file)
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-#append the topic proportions
-
-topic_probabilities <- lda_10$theta
-rownames(topic_probabilities) <- rownames(dfm_speeches)
-
-heatmap(as.matrix(topic_probabilities[]))
-```
-
-In a heatmap, darker colors correspond with higher proportions, whereas lighter colors denote lower proportions. In addition, it displays a clustering of countries and topics?
-
-## Estimating a Structural topic model
-
-Structural topic models allow us to model topical content and topical prevalence as a function of metadata. We can estimate an stm using the `stm()` function in the **stm** library. Let's first estimate an stm without any metadata and 3 topics (NB: estimating an **stm** is a bit slow, hence the small number of topics)
-
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-stm_3 <- stm(dfm_speeches, 
-              data = docvars(dfm_speeches),
-              seed = 123,
-              K = 3,
-              verbose = FALSE,
-             init.type = "Spectral")
-
-```
-
-We can inspect the estimated topics using the `labelTopics()` function in the **stm** library
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-labelTopics(stm_3)
-
-```
-
-We can also plot this model using `plot()`
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-plot(stm_3)
-```
-
-`findThoughts()` returns the topic documents associated with a topic
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-findThoughts(stm_3,texts = as.character(corpus_speeches), n = 1, topics = c(1))
-             
-```
-
-Let's now estimate an stm but this time we include metadata. To this end we will first create a dummy variable that denotes whether a country's gdp per capita is smaller than 10000 dollar. We will use `ifelse()` for this. For some countries we do not have data on GDP. In order for stm with metadata to work, we'll remove those from our dfm.
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-docvars(dfm_speeches, "gdp_dummy") <- ifelse(docvars(dfm_speeches, "gdp_per_capita") < 10000, 1, 0)
-
-dfm_speeches <- dfm_subset(dfm_speeches, !is.na(gdp_dummy))
-```
-
-Let's investigate if the content of estimated topics is dependent on a country's income by estimating an stm with 3 topics and modeling topical content as a function of our gdp_dummy variable. To speed up estimation, we will only focus on European countries, and we let the maximum number of EM (expectation maximization) steps to be no more than 50. Still, estimating this topic model may take a few minutes. 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-dfm_speeches_europe <- dfm_subset(dfm_speeches, continent == "Europe")
-table(docvars(dfm_speeches_europe, "gdp_dummy"))
-
-stm_3_metadata <- stm(dfm_speeches_europe, 
-                      data = docvars(dfm_speeches_europe),
-                      seed = 123,
-                      content = ~ gdp_dummy,
-                      K = 3,
-                      max.em.its = 50,
-                      verbose = TRUE,
-                      init.type = "Spectral")
-```
-
-Using `estimateEffect()` we estimate a regression where documents are the units, the outcome is the proportion of each document about a topic in an STM model and the covariates are document-meta data. This allows us to compare topic proportions for both groups of countries (i.e., rich and poor)
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-eff_gdp <- estimateEffect(
-  1:3 ~ gdp_dummy, 
-  stmobj = stm_3_metadata, 
-  meta = docvars(dfm_speeches_europe))
-
-```
-
-Let's plot these topic proportions
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-plot(eff_gdp, "gdp_dummy",
-     cov.value1 = "< 10000",
-     cov.value2 = "> 10000",
-     method = "difference")
-```
-We don't see any noticeable differences here but keep in mind that we estimated this model on only a small number
-
-
-## Seeded LDA
-
-In a last step, let's estimate a seeded topic model. This topic model is semi-supervised, and requires a set of dictionary words to structure each topic. We'll use a very short dictionary of four topics. 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-
-dictionary <- dictionary(list(terrorism = c("terroris*"), 
-                              environment = c("sustainable_development", "global_warming"),
-                              migration = c("migra*", "refugee"),
-                              economy = c("econo*", "development")))
-
-```
-
-Now let's run the `seededlda()` function and inspect the model output
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-lda_seed <- textmodel_seededlda(dfm_speeches, 
-                                dictionary, 
-                                batch_size = 0.01, 
-                                auto_iter = TRUE,
-                                verbose = FALSE)
-
-terms(lda_seed)
-
-head(lda_seed$theta, 10)
-
-```
-
-The `seededlda()` package also allows for unseeded topics. If we want to include 6 unseeded topics, we add the argument `residual = 6`
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-lda_seed_res <- textmodel_seededlda(dfm_speeches, 
-                                    dictionary, 
-                                    residual = 6, 
-                                    batch_size = 0.01, 
-                                    auto_iter = TRUE,
-                                    verbose = FALSE)
-
-terms(lda_seed_res)
-
-head(lda_seed_res$theta, 10)
+udmodel_dutch <- udpipe_load_model(file = "dutch-alpino-ud-2.5-191206.udpipe")
 
 ```
 
 
 ## Exercises
 
-Estimate an LDA model with 5 topics on `dfm_speeches` and alpha = 1. Call the model `lda_5`
+For these exercises we will work with the `parsed_tokens` dataframe that we created in the above script.
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+1. Create a dataframe `adjs` that contains all adjectives that appear in the corpus of inaugural speeches.
 
-lda_5 <- textmodel_lda(dfm_speeches, 
-                       k = 5,
-                       alpha = 1)
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+adjs <- parsed_tokens %>%
+  filter(upos == "ADJ")
 ```
 
-Display the 10 highest loading terms for each topic
+2. Display the most occurring adjectives in the inaugural speeches using `count()`
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-terms(lda_5, 10)
-```
-
-
-Show the topic distributions of `lda_5` in the first 20 documents.
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-head(lda_5$theta, 20)
-```
-
-Estimate another model with 5 topics, but this time with an alpha parameter equal to 10. Call it `lda_5_alpha_10`
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-lda_5_alpha_10 <- textmodel_lda(dfm_speeches, 
-                               k = 5,
-                               alpha = 10)
-```
-
-Show the topic distributions of `lda_5_alpha_10` in the first 20 documents. How do these topic distributions compare to those in `lda_5`. What do you think the alpha parameter has. 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-head(lda_5_alpha_10$theta, 20)
-```
-
-
-## Optional 
-
-Estimate an stm with 5 topics, using the `europe` variable as metadata. Call it `stm_5_europe`. NB: You can create a binary variable of `europe` using the `continent` variable in document level metadata and the `ifelse()` function. 
-
-```{r}
-docvars(dfm_speeches, "europe") <- ifelse(docvars(dfm_speeches, "continent") == "Europe", 1, 0)
+adjs %>% count(lemma, sort = TRUE)
 
 ```
 
-We'll set the maximum number of iterations at 50 so as to speed up the process. 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-stm_5_metadata <- stm(dfm_speeches,
-                     data = docvars(dfm_speeches),
-                     seed = 123,
-                     content = ~ europe,
-                     K = 5,
-                     max.em.its = 50,
-                     verbose = FALSE)
-```
+3. Group the the adjectives by speech and turn them into a dataframe called `adjs_dfm`.
 
-Plot these topics
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-plot(stm_5_metadata)
-```
-
-
-Using `estimateEffect()` we estimate a regression where documents are the units, the outcome is the proportion of each document about a topic in an STM model and the covariate is the europe variable. Call the output `eff_europe`. 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-
-eff_europe <- estimateEffect(
-  1:5 ~ europe,
-  stmobj = stm_5_metadata,
-  meta = docvars(dfm_speeches))
+adjs_dfm <- split(adjs$lemma, adjs$doc_id) %>% 
+  as.tokens() %>% dfm()
 
 ```
 
-Let's plot these topic proportions
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
-plot(eff_europe, "europe",
-    cov.value1 = "Europe",
-    cov.value2 = "Other",
-    method = "difference")
+4. Append Year, President, FirstName and Party from `inaugural_speeches_df`  as docvars to `adjs_dfm`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+docvars(adjs_dfm) <- inaugural_speeches_df %>%
+  select(Year, President, FirstName, Party)
+
+```
+
+5. Inspect `adjs_dfm` using the NRC Emotion Association Lexicon. If you don't recall how to do this, have a look back at lab session 4. Call the output of `dfm_lookuop` as `dfm_inaugural_NRC`.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+dfm_inaugural_NRC <- dfm_lookup(adjs_dfm, 
+                                dictionary = data_dictionary_NRC)
+
+head(dfm_inaugural_NRC)
 ```
 
 
+6. Add the count of fear words as a variable `fear` to the docvars of `adjs_dfm` 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+docvars(adjs_dfm, "fear") <- dfm_inaugural_NRC[,4]
+
+```
+
+**Advanced**
+
+7. Use tidyverse functions to display the mean number of fear words for Republican and Democratic presidents  (NB: normally we would divide this number by the total number of tokens in a speech). Have a look at [this link](https://dplyr.tidyverse.org/reference/group_by.html) for more info.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+data <- docvars(adjs_dfm)
+
+data_by_party <- data %>%
+  group_by(Party) %>%
+  filter(Party == "Republican" | Party == "Democratic") %>%
+  summarise(mean_fear = mean(fear))
+
+data_by_party
+
+```
+
+8. Download a language model of your choice and inspect a vector of a few sentences using `udpipe`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+
+udmodel_german <- udpipe_download_model(language = "german")
+
+
+german_documents <- c(d1 = "Ich bin ein Berliner",
+                      d2 = "Wie geht es dir")
+
+parsed_tokens_german <-  udpipe(german_documents, udmodel_german) %>% 
+  as_tibble()
+
+head(parsed_tokens_german)
+
+
+
+```
 
