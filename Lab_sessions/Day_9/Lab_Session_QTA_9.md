@@ -1,379 +1,469 @@
-The goal of today’s lab session is to inspect the functionality of the
-**udpipe** library. **UDPipe** (Wijffels, 2022) offers
-‘language-agnostic tokenization, tagging, lemmatization and dependency
-parsing of raw text’. We will focus on tagging and lemmatization in
-particular and how these pre-processing steps may make further analysis
-more precise. Lemmatizing generally works better than stemming,
-especially for inflected languages such as German or French.
-Part-of-Speech (POS) tags identify the type of word (noun, verb, etc) so
-it can be used to e.g. analyse only the verbs (actions) or adjectives
-and adverbs (descriptions).
+QTA Day 9: Word embeddings
+================
+18 July, 2024
 
-Another library that was developed by the quanteda team and that has
-similar functionality is **spacyr** (Benoit & Matsuo, 2020), an R
-wrapper around the spaCy package in Python. See this
-[link](https://spacyr.quanteda.io/articles/using_spacyr.html) for more
-information on using **spacyr**.
+The goal of today’s lab session is to develop an understanding for word
+embeddings. We’ll train a word embeddings model using the **text2vec**
+library (Selivanov, Bickel & Wang, 2022) on a set of speeches of
+European Commissioners and we’ll inspect these embeddings.
 
-Let’s load required libraries first.
+NB: Keep in mind that this lab session is meant for practice purposes
+only. The word vectors that we’ll inspect require careful validation.
+
+Let’s load the required libraries first.
 
 ``` r
-#load libraries
-library(tidyverse)
 library(quanteda)
-library(quanteda.textplots)
-library(quanteda.textmodels)
 library(quanteda.textstats)
-library(quanteda.sentiment)
-library(seededlda)
-library(udpipe)
+library(tidyverse)
+library(text2vec)
 ```
 
-The primary challenges for our purposes is to communicate between
-**udpipe** and **quanteda**. In the following code block we first turn
-our corpus into a dataframe called `inaugural_speeches_df` and save the
-speeches – which are now stored in `inaugural_speeches_df$text` – as a
-character vector called txt. **udpipe** works with character vectors.
+## Preparing the data
+
+Let’s read in the Commission speeches
 
 ``` r
-inaugural_speeches <- data_corpus_inaugural
+load("european_commission.Rdata")
 
-inaugural_speeches_df <- convert(inaugural_speeches,
-                                 to = "data.frame")
-
-txt <- inaugural_speeches_df$text
-str(txt)
+dim(commission_speeches)
 ```
 
-    ##  chr [1:59] "Fellow-Citizens of the Senate and of the House of Representatives:\n\nAmong the vicissitudes incident to life n"| __truncated__ ...
-
-Let’s apply the `udpipe` function to this `txt`. This function tags each
-token in each speech, based on an English-language model which will be
-downloaded into the working directory. We instruct `udpipe` to include
-the doc_ids from our **quanteda** corpus object. This will help us later
-on when we want to transform the output of our **udpipe** workflow back
-into a corpus which we can inspect with **quanteda** functions:
+    ## [1] 6140    2
 
 ``` r
-parsed_tokens <-  udpipe(txt, "english", 
-                         doc_id = inaugural_speeches_df$doc_id) %>% 
-  as_tibble()
+names(commission_speeches)
 ```
 
-Let’s inspect this object
+    ## [1] "speaker" "text"
+
+We’ll tokenise the speeches.
 
 ``` r
-head(parsed_tokens)
+corpus_speeches <- corpus(commission_speeches)
+tokens_speeches <- tokens(corpus_speeches,
+                          what = "word",
+                          remove_punct = TRUE, 
+                          remove_symbols = TRUE, 
+                          remove_numbers = TRUE,
+                          remove_url = TRUE,
+                          remove_separators = TRUE,
+                          split_hyphens = FALSE,
+                          ) %>%
+  tokens_remove(stopwords(source = "smart"), padding = FALSE)
 ```
 
-    ## # A tibble: 6 × 17
-    ##   doc_id          paragraph_id sentence_id sentence                     start   end term_id token_id token lemma upos  xpos  feats head_token_id dep_rel deps  misc 
-    ##   <chr>                  <int>       <int> <chr>                        <int> <int>   <int> <chr>    <chr> <chr> <chr> <chr> <chr> <chr>         <chr>   <chr> <chr>
-    ## 1 1789-Washington            1           1 Fellow-Citizens of the Sena…     1     6       1 1        Fell… fell… ADJ   JJ    Degr… 3             amod    <NA>  Spac…
-    ## 2 1789-Washington            1           1 Fellow-Citizens of the Sena…     7     7       2 2        -     -     PUNCT HYPH  <NA>  3             punct   <NA>  Spac…
-    ## 3 1789-Washington            1           1 Fellow-Citizens of the Sena…     8    15       3 3        Citi… citi… NOUN  NNS   Numb… 0             root    <NA>  <NA> 
-    ## 4 1789-Washington            1           1 Fellow-Citizens of the Sena…    17    18       4 4        of    of    ADP   IN    <NA>  6             case    <NA>  <NA> 
-    ## 5 1789-Washington            1           1 Fellow-Citizens of the Sena…    20    22       5 5        the   the   DET   DT    Defi… 6             det     <NA>  <NA> 
-    ## 6 1789-Washington            1           1 Fellow-Citizens of the Sena…    24    29       6 6        Sena… Sena… PROPN NNP   Numb… 3             nmod    <NA>  <NA>
+NB: The next few steps draw on
+[this](https://quanteda.io/articles/pkgdown/replication/text2vec.html)
+**quanteda** tutorial.
+
+We’ll select those features that occur at least 10 times
 
 ``` r
-str(parsed_tokens)
+feats <- dfm(tokens_speeches) %>%
+    dfm_trim(min_termfreq = 10) %>%
+    featnames()
 ```
 
-    ## tibble [152,420 × 17] (S3: tbl_df/tbl/data.frame)
-    ##  $ doc_id       : chr [1:152420] "1789-Washington" "1789-Washington" "1789-Washington" "1789-Washington" ...
-    ##  $ paragraph_id : int [1:152420] 1 1 1 1 1 1 1 1 1 1 ...
-    ##  $ sentence_id  : int [1:152420] 1 1 1 1 1 1 1 1 1 1 ...
-    ##  $ sentence     : chr [1:152420] "Fellow-Citizens of the Senate and of the House of Representatives:" "Fellow-Citizens of the Senate and of the House of Representatives:" "Fellow-Citizens of the Senate and of the House of Representatives:" "Fellow-Citizens of the Senate and of the House of Representatives:" ...
-    ##  $ start        : int [1:152420] 1 7 8 17 20 24 31 35 38 42 ...
-    ##  $ end          : int [1:152420] 6 7 15 18 22 29 33 36 40 46 ...
-    ##  $ term_id      : int [1:152420] 1 2 3 4 5 6 7 8 9 10 ...
-    ##  $ token_id     : chr [1:152420] "1" "2" "3" "4" ...
-    ##  $ token        : chr [1:152420] "Fellow" "-" "Citizens" "of" ...
-    ##  $ lemma        : chr [1:152420] "fellow" "-" "citizen" "of" ...
-    ##  $ upos         : chr [1:152420] "ADJ" "PUNCT" "NOUN" "ADP" ...
-    ##  $ xpos         : chr [1:152420] "JJ" "HYPH" "NNS" "IN" ...
-    ##  $ feats        : chr [1:152420] "Degree=Pos" NA "Number=Plur" NA ...
-    ##  $ head_token_id: chr [1:152420] "3" "3" "0" "6" ...
-    ##  $ dep_rel      : chr [1:152420] "amod" "punct" "root" "case" ...
-    ##  $ deps         : chr [1:152420] NA NA NA NA ...
-    ##  $ misc         : chr [1:152420] "SpaceAfter=No" "SpaceAfter=No" NA NA ...
-
-As you can see, this object is a dataframe that consists of 152420 where
-each row is a token, and each column is an annotation. For our purposes,
-the most relevant variables are:
-
--   `doc_id` contains the document in which the token appeared;
--   `token` – contains the actual token;
--   `lemma` – contains the lemmatized token;
--   `upos` – contains the part of speech of the token, such as
-    adjective, verb, noun, etc.;
-
-Let’s select those variables
+We’ll now select these features from the tokenised speeches.
 
 ``` r
-parsed_tokens <- parsed_tokens %>% 
-  select(doc_id, token, upos, lemma)
+tokens_speeches <- tokens_select(tokens_speeches, 
+                                 feats)
 ```
 
-Inspect how many nouns appear in the corpus
+Let’s inspect which features occur most often
 
 ``` r
-sum(parsed_tokens$upos == "NOUN")
+tokens_speeches %>%
+  dfm() %>%
+  topfeatures(n = 100,
+              decreasing = TRUE,
+              scheme = c("count")
+)
 ```
 
-    ## [1] 30639
+    ##      european            eu        europe    commission        member 
+    ##         59741         36221         28885         26391         21919 
+    ##        states      economic        policy        market         union 
+    ##         21113         20112         20031         18333         17782 
+    ##          work        energy     important        growth          make 
+    ##         15250         14912         14768         14553         14211 
+    ##     countries         today     financial        people       support 
+    ##         13889         13600         12862         12828         12806 
+    ##         world          time          year        future        social 
+    ##         11848         11796         11584         11424         11386 
+    ##      national         years        public   development       economy 
+    ##         11285         11020         10909         10147          9952 
+    ##        global         level        crisis      research    innovation 
+    ##          9892          9771          9664          9422          9377 
+    ##    investment      citizens        change     political    challenges 
+    ##          8942          8888          8875          8675          8165 
+    ##      services        ladies        sector          good     gentlemen 
+    ##          8113          8005          7987          7966          7922 
+    ##           key        single       markets        ensure         trade 
+    ##          7805          7773          7666          7557          7524 
+    ##       council international         rules         clear   cooperation 
+    ##          7521          7413          7398          7379          7332 
+    ##          area          role        action       process        common 
+    ##          7176          7052          6986          6929          6872 
+    ##          part   competition      business     framework          euro 
+    ##          6862          6862          6758          6607          6544 
+    ##        system       climate   sustainable        issues         state 
+    ##          6526          6500          6491          6488          6485 
+    ##       forward      security     companies      strategy          made 
+    ##          6416          6386          6350          6323          6299 
+    ##        rights         areas     president    parliament        reform 
+    ##          6167          6126          6077          6063          6027 
+    ##      progress       working      approach      continue           set 
+    ##          5976          5942          5940          5909          5874 
+    ##     agreement      measures         means          jobs      policies 
+    ##          5862          5819          5814          5770          5589 
+    ##         place        strong       efforts          high          open 
+    ##          5411          5356          5347          5331          5318 
+    ##       country      regional          data           law           put 
+    ##          5272          5186          5140          5109          5065
 
-Inspect how many verbs appear in the corpus
+We’ll create a feature-co-occurrence matrix using the `fcm()` function
+which calculates co-occurrences of features within a user-defined
+context. We’ll choose a window size of 5, but other choices are
+available
 
 ``` r
-sum(parsed_tokens$upos == "VERB")
+speeches_fcm <- fcm(tokens_speeches, 
+                    context = "window", 
+                    window = 5,
+                    tri = TRUE)
+
+dim(speeches_fcm)
 ```
 
-    ## [1] 14842
+    ## [1] 21516 21516
 
-Inspect how many adjectives appear in the corpus
+Let’s see what `speeches_fcm()` looks like.
 
 ``` r
-sum(parsed_tokens$upos == "ADJ")
+speeches_fcm[1:5,1:5]
 ```
 
-    ## [1] 11640
+    ## Feature co-occurrence matrix of: 5 by 5 features.
+    ##            features
+    ## features    Dear President Committee Regions Erasmus
+    ##   Dear       474       221        45      16       5
+    ##   President    0      1414       105      43       3
+    ##   Committee    0         0       188     287       4
+    ##   Regions      0         0         0      26       1
+    ##   Erasmus      0         0         0       0     122
 
-We can also inspect all different POS tags in one go.
+*Dear* and *President* co-occur 221 times in the corpus. *Dear* and
+*Regions* only 16 times.
+
+## Fitting a GloVe model
+
+We’ll now fit a GloVe vector model. GloVe is an unsupervised learning
+algorithm for obtaining vector representations for words. Training is
+performed on the feature co-occurrence matrix, which represents
+information about global word-word co-occurrence statistics in a corpus.
 
 ``` r
-table(parsed_tokens$upos)
+glove <- GlobalVectors$new(rank = 50, 
+                           x_max = 10)
+
+wv_main <- glove$fit_transform(speeches_fcm, 
+                               n_iter = 10,
+                               convergence_tol = 0.01, 
+                               n_threads = 8)
 ```
 
-    ## 
-    ##   ADJ   ADP   ADV   AUX CCONJ   DET  INTJ  NOUN   NUM  PART  PRON PROPN PUNCT SCONJ   SYM  VERB     X 
-    ## 11640 18998  6243  9365  6852 16562    38 30639   509  3680 13794  2480 14073  2672    16 14842    17
-
-An interesting tag is `PROPN`or proper noun that refers to the name (or
-part of the name) of a unique entity, be it an individual, a place, or
-an object. To get a feel for what entities we can filter out the proper
-nouns and then count and sort their lemmas using `count()` from
-**tidyverse**
+    ## INFO  [17:03:20.536] epoch 1, loss 0.1514
+    ## INFO  [17:03:23.765] epoch 2, loss 0.1103
+    ## INFO  [17:03:26.975] epoch 3, loss 0.0991
+    ## INFO  [17:03:30.160] epoch 4, loss 0.0933
+    ## INFO  [17:03:33.355] epoch 5, loss 0.0897
+    ## INFO  [17:03:36.549] epoch 6, loss 0.0871
+    ## INFO  [17:03:39.753] epoch 7, loss 0.0853
+    ## INFO  [17:03:42.963] epoch 8, loss 0.0838
+    ## INFO  [17:03:46.164] epoch 9, loss 0.0827
+    ## INFO  [17:03:49.374] epoch 10, loss 0.0818
 
 ``` r
-propns <- parsed_tokens %>%
-  filter(upos == "PROPN")
-
-propns %>% count(lemma, sort = TRUE)
+dim(wv_main)
 ```
 
-    ## # A tibble: 512 × 2
-    ##    lemma         n
-    ##    <chr>     <int>
-    ##  1 States      310
-    ##  2 America     237
-    ##  3 United      170
-    ##  4 Congress    126
-    ##  5 God         107
-    ##  6 President    88
-    ##  7 Americans    75
-    ##  8 Mr.          31
-    ##  9 nation       29
-    ## 10 Chief        27
-    ## # ℹ 502 more rows
+    ## [1] 21516    50
 
-Say we are only interested in the nouns in those speeches
+The model learns two sets of word vectors - main and context. They are
+essentially the same.
 
 ``` r
-nouns <- parsed_tokens %>%
-  filter(upos == "NOUN")
+wv_context <- glove$components
+dim(wv_context)
 ```
 
-Let’s display their lemmas in a Wordcloud. We’ll first use the `split()`
-function from base R to divide the nouns per speech in a list. We then
-use `as.tokens()` in **quanteda** to turn that list into a tokens
-object. We can create a `dfm` and take it from there.
+    ## [1]    50 21516
+
+Following recommendations in the **text2vec** package we sum these
+vectors. We transpose the `wv_context` object so that it has the same
+number of rows and columns as `wv_main`
 
 ``` r
-nouns_dfm <- split(nouns$lemma, nouns$doc_id) %>% 
-  as.tokens() %>% 
-  dfm() 
+word_vectors <- wv_main + t(wv_context)
 
-
-textplot_wordcloud(nouns_dfm, max_words = 50)
+dim(word_vectors)
 ```
 
-![](Lab_Session_QTA_9_files/figure-markdown_github/unnamed-chunk-12-1.png)
+    ## [1] 21516    50
 
-Let’s do the same for verbs
+We now have 50-dimension word_vectors for all 21516 tokens in our
+corpus.
+
+## Inspecting the GloVe model
+
+Now it’s tme to inspect these word embeddings. For example, we find the
+nearest neighbors of a word (or a set of words) of interest. Nearest
+neighbors are those words that are most closely located in the vector
+space. We can find those using by calculating cosine similarities
+between the word vector of a target word and all other word vectors.
+
+We’ll use a custom function
+([source](https://s-ai-f.github.io/Natural-Language-Processing/Word-embeddings.html))
+to finds these similar words It takes in three arguments: the target
+word, the word_vectors object, and the number of neighbors we want to
+inspect.
 
 ``` r
-verbs <- parsed_tokens %>%
-  filter(upos == "VERB")
-
-verbs_dfm <- split(verbs$lemma, verbs$doc_id) %>% 
-  as.tokens() %>% dfm()
-
-textplot_wordcloud(verbs_dfm, max_words = 50)
+find_similar_words <- function(word, word_vectors, n = 10) {
+  similarities <- word_vectors[word, , drop = FALSE] %>%
+    sim2(word_vectors, y = ., method = "cosine")
+  
+  similarities[,1] %>% sort(decreasing = TRUE) %>% head(n)
+}
 ```
 
-![](Lab_Session_QTA_9_files/figure-markdown_github/unnamed-chunk-13-1.png)
-
-If we want to stitch back together the metadata to our newly created
-`nouns_dfm` and `verbs_dfm` we can do this as follows:
+The Commissioner speeches span the time period 2007–2014, a time of
+upheaval in the EU. Let’s take a look at the nearest neighbors of
+‘crisis’. The `drop = FALSE` argument ensure that crisis is not
+converted to a vector.
 
 ``` r
-docvars(nouns_dfm) <- inaugural_speeches_df %>% 
-  select(Year, President, FirstName, Party)
-
-docvars(verbs_dfm) <- inaugural_speeches_df %>%
-  select(Year, President, FirstName, Party)
+find_similar_words("crisis", word_vectors)
 ```
 
-We are now in a position to inspect these dfms. For example, we may be
-interested in what sort of verbs distinguish Republican presidents from
-Democratic presidents.
+    ##       crisis    financial     economic       facing     response         face 
+    ##    1.0000000    0.7720751    0.7641775    0.7413728    0.7370255    0.7238863 
+    ## consequences        worst    situation         past 
+    ##    0.7099380    0.7084172    0.7056526    0.7005671
+
+Crisis refers mostly to the Eurocrisis.
+
+Let’s inspect the context of climate
 
 ``` r
-verbs_dfm_grouped <- verbs_dfm %>% 
-  dfm_group(groups = Party) %>%
-  dfm_subset(Party == "Democratic" | Party == "Republican")
-
-verb_keyness <- textstat_keyness(verbs_dfm_grouped, target = "Republican")
-
-textplot_keyness(verb_keyness,
-                 n = 10,
-                 color = c("red", "blue"))
+find_similar_words("climate", word_vectors)
 ```
 
-![](Lab_Session_QTA_9_files/figure-markdown_github/unnamed-chunk-15-1.png)
-Let’s apply a topic model to the nouns
+    ##    climate     change     global  challenge      major    Climate developing 
+    ##  1.0000000  0.9231393  0.7476927  0.7306053  0.6884716  0.6797308  0.6791071 
+    ##       lead challenges     action 
+    ##  0.6618658  0.6566193  0.6486250
+
+Global climate change needs to be addressed, that much is clear.
+
+We can sum vectors to each find neigbors. Let’s add crisis + Ireland
 
 ``` r
-lda_10 <- textmodel_lda(nouns_dfm, 
-                       k = 10,
-                       alpha = 1,
-                       max_iter = 2000)
+crisis_Ireland <- word_vectors["crisis", , drop = FALSE] +
+  word_vectors["Ireland", , drop = FALSE] 
 ```
 
-Let’s inspect this topic model
+And find the nearest neighbors of this sum. The sim2 function calculates
+the cosine similarity between the word vectors of the target word and
+all other word vectors.
 
 ``` r
-terms(lda_10, 10)
+cos_sim_crisis_Ireland <- sim2(x = word_vectors, y = crisis_Ireland, method = "cosine", norm = "l2")
+head(sort(cos_sim_crisis_Ireland[,1], decreasing = TRUE), 20)
 ```
 
-    ##       topic1       topic2         topic3       topic4        topic5     topic6        topic7       topic8         topic9         topic10  
-    ##  [1,] "world"      "union"        "today"      "war"         "side"     "law"         "government" "law"          "civilization" "thing"  
-    ##  [2,] "nation"     "constitution" "time"       "nation"      "tax"      "business"    "people"     "citizenship"  "progress"     "spirit" 
-    ##  [3,] "people"     "power"        "citizen"    "commerce"    "country"  "race"        "country"    "constitution" "ideal"        "hand"   
-    ##  [4,] "freedom"    "opinion"      "work"       "force"       "price"    "legislation" "citizen"    "demand"       "task"         "form"   
-    ##  [5,] "peace"      "territory"    "child"      "peace"       "burden"   "policy"      "duty"       "method"       "expression"   "part"   
-    ##  [6,] "life"       "object"       "generation" "order"       "chance"   "condition"   "power"      "commerce"     "leadership"   "body"   
-    ##  [7,] "man"        "liberty"      "land"       "year"        "name"     "change"      "interest"   "body"         "self"         "thought"
-    ##  [8,] "government" "other"        "century"    "honor"       "globe"    "reform"      "time"       "community"    "today"        "action" 
-    ##  [9,] "hope"       "member"       "promise"    "improvement" "pledge"   "necessity"   "party"      "endeavor"     "agency"       "measure"
-    ## [10,] "year"       "hand"         "dream"      "object"      "struggle" "trade"       "law"        "territory"    "advance"      "fact"
+    ##       crisis      Ireland       facing       Greece    financial         past 
+    ##    0.8988937    0.7861564    0.7172469    0.7076244    0.7016614    0.6996338 
+    ##    situation         back     economic    difficult        shown        years 
+    ##    0.6995472    0.6976457    0.6962478    0.6889091    0.6853684    0.6670418 
+    ## difficulties         time         euro      current       forget         fact 
+    ##    0.6669505    0.6614908    0.6605170    0.6576660    0.6554450    0.6528046 
+    ##       helped      started 
+    ##    0.6496106    0.6432041
+
+It mostly lists other countries that where also struggling at the time.
+
+What if we substract the Ireland vector from the crisis vector?
 
 ``` r
-head(lda_10$theta, 10)
+crisis_Ireland <- word_vectors["crisis", , drop = FALSE] -
+  word_vectors["Ireland", , drop = FALSE] 
+
+cos_sim_crisis_Ireland <- sim2(x = word_vectors, y = crisis_Ireland, method = "cosine", norm = "l2")
+head(sort(cos_sim_crisis_Ireland[,1], decreasing = TRUE), 10)
 ```
 
-    ##                     topic1     topic2      topic3    topic4      topic5      topic6    topic7     topic8      topic9     topic10
-    ## 1789-Washington 0.07615894 0.10264901 0.013245033 0.2284768 0.013245033 0.006622517 0.3774834 0.02317881 0.046357616 0.112582781
-    ## 1793-Washington 0.02857143 0.08571429 0.142857143 0.1428571 0.028571429 0.057142857 0.4285714 0.02857143 0.028571429 0.028571429
-    ## 1797-Adams      0.11591696 0.03114187 0.005190311 0.3027682 0.001730104 0.010380623 0.4083045 0.03460208 0.003460208 0.086505190
-    ## 1801-Jefferson  0.18734793 0.09975669 0.019464720 0.1484185 0.019464720 0.004866180 0.4257908 0.00486618 0.002433090 0.087591241
-    ## 1805-Jefferson  0.07602339 0.10526316 0.001949318 0.1617934 0.025341131 0.025341131 0.4074074 0.09941520 0.007797271 0.089668616
-    ## 1809-Madison    0.14338235 0.08823529 0.003676471 0.2941176 0.003676471 0.007352941 0.4080882 0.01838235 0.007352941 0.025735294
-    ## 1813-Madison    0.08695652 0.01449275 0.014492754 0.2862319 0.086956522 0.007246377 0.3731884 0.05072464 0.054347826 0.025362319
-    ## 1817-Monroe     0.01434720 0.09756098 0.001434720 0.2725968 0.012912482 0.002869440 0.5767575 0.00143472 0.010043042 0.010043042
-    ## 1821-Monroe     0.01612903 0.06451613 0.002150538 0.4053763 0.008602151 0.012903226 0.4569892 0.01290323 0.018279570 0.002150538
-    ## 1825-Adams      0.11885246 0.18715847 0.005464481 0.1912568 0.015027322 0.001366120 0.4398907 0.01502732 0.009562842 0.016393443
+    ##       crisis     systemic     response consequences       crises    financial 
+    ##    0.7346659    0.6777083    0.6380374    0.6127668    0.5912191    0.5553756 
+    ##        midst       urgent     economic         face 
+    ##    0.5549008    0.5478941    0.5469639    0.5444004
 
-## Other languages
+This time we get more general crisis terms.
 
-**updipe** allows you to work with pre-trained language models build for
-more than 65 languages
+Inspecting a word embeddings model like so can be useful for a few
+different tasks:
 
-<figure>
-<img src="language_models.png" style="width:65.0%"
-alt="Language models" />
-<figcaption aria-hidden="true">Language models</figcaption>
-</figure>
+1.  As a list of potential terms for dictionary construction;
+2.  As an input to downstream QTA tasks;
+3.  As a source for visualization.
 
-If you want to work with these models you first need to download them.
-Let’s say I want to work with a Dutch corpus
+Let’s take this first task an example. Perhaps we want to develop a
+sentiment dictionary for Commissioner speeches, but we are less trusting
+of off-the-shelf sentiment dictionaries because we suspect that these
+may not capture how sentiment is expressed in Commissioner speeches. One
+way to go is use a small seed dictionary of positive and negative words,
+and use word embeddings to inspect what other words are close in the
+embedding space to these seed words.
+
+For example, we may take as positive words a small set of positive seed
+words: *good*, *nice*, *excellent*, *positive*, *fortunate*, *correct*,
+*superior*. And as negative words a small set of negative seed words:
+*bad*, *nasty*, *poor*, *negative*, *wrong*, *unfortunate*
+
+Let’s start by calculating the average vector for good.
 
 ``` r
-udmodel_dutch <- udpipe_download_model(language = "dutch")
-
-str(udmodel_dutch)
+positive <- (word_vectors["good", , drop = FALSE] +
+  word_vectors["nice", , drop = FALSE] +
+  word_vectors["excellent", , drop = FALSE] +
+  word_vectors["positive", , drop = FALSE] + 
+  word_vectors["fortunate", , drop = FALSE] + 
+  word_vectors["correct", , drop = FALSE] + 
+  word_vectors["superior", , drop = FALSE]) /7
 ```
 
-    ## 'data.frame':    1 obs. of  5 variables:
-    ##  $ language        : chr "dutch-alpino"
-    ##  $ file_model      : chr "/Users/hjms/Documents/Teaching/Essex/2023/Labs/Lab_9/dutch-alpino-ud-2.5-191206.udpipe"
-    ##  $ url             : chr "https://raw.githubusercontent.com/jwijffels/udpipe.models.ud.2.5/master/inst/udpipe-ud-2.5-191206/dutch-alpino-"| __truncated__
-    ##  $ download_failed : logi FALSE
-    ##  $ download_message: chr "OK"
-
-I can now start tagging with vector of Dutch documents
+And for bad
 
 ``` r
-dutch_documents <- c(d1 = "AZ wordt kampioen dit jaar",
-                     d2 = "Mark Rutte, premier van Nederland, is op weg naar Brussel")
-
-parsed_tokens_dutch <-  udpipe(dutch_documents, udmodel_dutch) %>% 
-  as_tibble()
-
-head(parsed_tokens_dutch)
+negative <- (word_vectors["bad", , drop = FALSE] +
+  word_vectors["nasty", , drop = FALSE] +
+  word_vectors["poor", , drop = FALSE] +
+  word_vectors["negative", , drop = FALSE] + 
+  word_vectors["wrong", , drop = FALSE] + 
+  word_vectors["unfortunate", , drop = FALSE]) /6
 ```
 
-    ## # A tibble: 6 × 17
-    ##   doc_id paragraph_id sentence_id sentence                              start   end term_id token_id token lemma upos  xpos  feats head_token_id dep_rel deps  misc 
-    ##   <chr>         <int>       <int> <chr>                                 <int> <int>   <int> <chr>    <chr> <chr> <chr> <chr> <chr> <chr>         <chr>   <chr> <chr>
-    ## 1 d1                1           1 AZ wordt kampioen dit jaar                1     2       1 1        AZ    Az    NOUN  N|so… Gend… 2             nsubj   <NA>   <NA>
-    ## 2 d1                1           1 AZ wordt kampioen dit jaar                4     8       2 2        wordt word… AUX   WW|p… Numb… 0             root    <NA>   <NA>
-    ## 3 d1                1           1 AZ wordt kampioen dit jaar               10    17       3 3        kamp… kamp… NOUN  N|so… Gend… 2             xcomp   <NA>   <NA>
-    ## 4 d1                1           1 AZ wordt kampioen dit jaar               19    21       4 4        dit   dit   DET   VNW|… <NA>  5             det     <NA>   <NA>
-    ## 5 d1                1           1 AZ wordt kampioen dit jaar               23    26       5 5        jaar  jaar  NOUN  N|so… Gend… 3             obl     <NA>  "Spa…
-    ## 6 d2                1           1 Mark Rutte, premier van Nederland, i…     1     4       1 1        Mark  mark  PROPN SPEC… <NA>  9             nsubj   <NA>   <NA>
-
-If I have already downloaded the a language, I can load it as follows
-(if the model is in the current working directory – otherwise I will
-need to give it the full path to the file)
+We can now inspect the neighbors of our ‘positive’ seed dictionary.
 
 ``` r
-udmodel_dutch <- udpipe_load_model(file = "dutch-alpino-ud-2.5-191206.udpipe")
+cos_sim_positive <- sim2(x = word_vectors, y = positive, method = "cosine", norm = "l2")
+head(sort(cos_sim_positive[,1], decreasing = TRUE), 20)
 ```
+
+    ##       good        lot      start    success   positive       hope  confident 
+    ##  0.8426384  0.7709069  0.7388799  0.7314885  0.7254225  0.7233983  0.7214691 
+    ##       time successful       made     taking  excellent     making       back 
+    ##  0.7104527  0.6997398  0.6910427  0.6841490  0.6840285  0.6830315  0.6810424 
+    ##     coming    results      point      takes      ahead      today 
+    ##  0.6794501  0.6794499  0.6793053  0.6750520  0.6722713  0.6720345
+
+This includes some words that seem useful such as encouraging and
+opportunity and forward. But also the word bad appears.
+
+Let’s do the same for our ‘negative’ dictionary
+
+``` r
+cos_sim_negative <- sim2(x = word_vectors, y = negative, method = "cosine", norm = "l2")
+head(sort(cos_sim_negative[,1], decreasing = TRUE), 20)
+```
+
+    ##          bad         poor consequences        worse        wrong     negative 
+    ##    0.7830673    0.7114921    0.6659107    0.6593086    0.6203496    0.6203404 
+    ##         felt      effects     affected       damage      learned     problems 
+    ##    0.6054218    0.6050681    0.5841829    0.5635160    0.5558923    0.5556926 
+    ##      morally       ignore       losing       simply        thing       crisis 
+    ##    0.5543220    0.5524187    0.5502797    0.5474387    0.5467835    0.5465727 
+    ##          hit       severe 
+    ##    0.5405302    0.5351870
+
+Again we see a mix of useful and less useful words.
 
 ## Exercises
 
-For these exercises we will work with the `parsed_tokens` dataframe that
-we created in the above script.
+Estimate new word vectors but this time on a feature co-occurrence
+matrix with a window size of 5 but with more weight given to words when
+they appear closer to the target word (see the *count* and *weight*
+arguments in `fcm()`. To estimate this model comment out the code chunk
+below to run the model)
 
-1.  Create a dataframe `adjs` that contains all adjectives that appear
-    in the corpus of inaugural speeches.
+``` r
+#speeches_fcm_weighted <- fcm(tokens_speeches, 
+#                    context = "window", 
+#                    count = "weighted", 
+#                    weights = 1 / (1:5),
+#                    tri = TRUE)
 
-2.  Display the most occurring adjectives in the inaugural speeches
-    using `count()`
 
-3.  Group the the adjectives by speech and turn them into a dataframe
-    called `adjs_dfm`.
+#glove <- GlobalVectors$new(rank = 50, 
+#                           x_max = 10)
 
-4.  Append Year, President, FirstName and Party from
-    `inaugural_speeches_df` as docvars to `adjs_dfm`
+#wv_main_weighted <- glove$fit_transform(speeches_fcm_weighted, 
+#                                        n_iter = 10,
+#                                        convergence_tol = 0.01, 
+#                                        n_threads = 8)
 
-5.  Inspect `adjs_dfm` using the NRC Emotion Association Lexicon. If you
-    don’t recall how to do this, have a look back at lab session 4. Call
-    the output of `dfm_lookuop` as `dfm_inaugural_NRC`.
+#wv_context_weighted <- glove$components
 
-6.  Add the count of fear words as a variable `fear` to the docvars of
-    `adjs_dfm`
+#word_vectors_weighted <- wv_main_weighted + t(wv_context_weighted)
+```
 
-**Advanced**
+2.  Compare the nearest neighbors for crisis in both the original and
+    the new model. Are they any different?
 
-1.  Use tidyverse functions to display the mean number of fear words for
-    Repulican and Democratic presidents (NB: normally we would divide
-    this number by the total number of tokens in a speech). Have a look
-    at [this link](https://dplyr.tidyverse.org/reference/group_by.html)
-    for more info.
+``` r
+#find_similar_words("crisis", word_vectors)
+#find_similar_words("crisis", word_vectors_weighted)
+```
 
-2.  Download a language model of your choice and inspect a vector of a
-    few sentences using `udpipe`
+3.  Inspect the nearest neighbors for Greece, Portugal, Spain and Italy
+    and substract the vectors for Netherlands, Germany, Denmark and
+    Austria
+
+``` r
+#southern_northern  <- (word_vectors["Greece", , drop = FALSE] +
+#  word_vectors["Portugal", , drop = FALSE] +
+#  word_vectors["Spain", , drop = FALSE] +
+#  word_vectors["Italy", , drop = FALSE] -
+#  word_vectors["Netherlands", , drop = FALSE] -
+#  word_vectors["Germany", , drop = FALSE] -
+#  word_vectors["Denmark", , drop = FALSE] -
+#  word_vectors["Austria", , drop = FALSE])
+
+
+#cos_sim_southern_northern <- sim2(x = word_vectors, y = southern_northern, method = "cosine", norm = "l2")
+#head(sort(cos_sim_southern_northern[,1], decreasing = TRUE), 20)
+```
+
+4.  And turn this vector around
+
+``` r
+#northern_southern  <- (word_vectors["Netherlands", , drop = FALSE] +
+#  word_vectors["Germany", , drop = FALSE] +
+# word_vectors["Denmark", , drop = FALSE] +
+# word_vectors["Austria", , drop = FALSE] -
+# word_vectors["Greece", , drop = FALSE] -
+#  word_vectors["Portugal", , drop = FALSE] -
+#  word_vectors["Spain", , drop = FALSE] -
+#  word_vectors["Italy", , drop = FALSE])
+
+
+#cos_sim_northern_southern <- sim2(x = word_vectors, y = northern_southern, method = "cosine", norm = "l2")
+#head(sort(cos_sim_northern_southern[,1], decreasing = TRUE), 20)
+```
+
+5.  Inspect these word vectors further. If you receive a
+    `subscript out of bounds` error, it means that the word does not
+    appear in the corpus.

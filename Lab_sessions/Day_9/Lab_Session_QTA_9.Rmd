@@ -1,5 +1,5 @@
 ---
-title: "QTA Day 9: NLP processing in R"
+title: "QTA Day 9: Word embeddings"
 output:
   github_document:
   html_document:
@@ -9,303 +9,346 @@ date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, results = TRUE, warning = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
-The goal of today's lab session is to inspect the functionality of the **udpipe** library. **UDPipe** (Wijffels, 2022) offers 'language-agnostic tokenization, tagging, lemmatization and dependency parsing of raw text'. We will focus on tagging and lemmatization in particular and how these pre-processing steps may make further analysis more precise. Lemmatizing generally works better than stemming, especially for inflected languages such as German or French. Part-of-Speech (POS) tags identify the type of word (noun, verb, etc) so it can be used to e.g. analyse only the verbs (actions) or adjectives and adverbs (descriptions).
 
-Another library that was developed by the quanteda team and that has similar functionality is **spacyr** (Benoit & Matsuo, 2020), an R wrapper around the spaCy package in Python. See this [link](https://spacyr.quanteda.io/articles/using_spacyr.html) for more information on using **spacyr**.
+The goal of today's lab session is to develop an understanding for word embeddings. We'll train a word embeddings model using the **text2vec** library (Selivanov, Bickel & Wang, 2022) on a set of speeches of European Commissioners and we'll inspect these embeddings.
 
-Let's load required libraries first.
+NB: Keep in mind that this lab session is meant for practice purposes only. The word vectors that we'll inspect require careful validation. 
 
-```{r, echo = TRUE, results = 'verbatim', warning = FALSE, message = FALSE}
+Let's load the required libraries first.
 
-#load libraries
-library(tidyverse)
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
 library(quanteda)
-library(quanteda.textplots)
-library(quanteda.textmodels)
 library(quanteda.textstats)
-library(quanteda.sentiment)
-library(seededlda)
-library(udpipe)
-
-```
-
-The primary challenges for our purposes is to communicate between **udpipe** and **quanteda**. In the following code block we first turn our corpus into a dataframe called `inaugural_speeches_df` and save the speeches -- which are now stored in `inaugural_speeches_df$text` -- as a character vector called txt. **udpipe** works with character vectors. 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-inaugural_speeches <- data_corpus_inaugural
-
-inaugural_speeches_df <- convert(inaugural_speeches,
-                                 to = "data.frame")
-
-txt <- inaugural_speeches_df$text
-str(txt)
-
-```
-
-Let's apply the `udpipe` function to this `txt`. This function tags each token in each speech, based on an English-language model which will be downloaded into the working directory. We instruct `udpipe` to include the doc_ids from our **quanteda** corpus object. This will help us later on when we want to transform the output of our **udpipe** workflow back into a corpus which we can inspect with **quanteda** functions:
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-parsed_tokens <-  udpipe(txt, "english", 
-                         doc_id = inaugural_speeches_df$doc_id) %>% 
-  as_tibble()
-
-```
-
-Let's inspect this object
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-head(parsed_tokens)
-
-str(parsed_tokens)
-
-```
-
-As you can see, this object is a dataframe that consists of 152420 where each row is a token, and each column is an annotation. For our purposes, the most relevant variables are:
-
- - `doc_id` contains the document in which the token appeared;
- - `token` -- contains the actual token;
- - `lemma` -- contains the lemmatized token;
- - `upos` -- contains the part of speech of the token, such as adjective, verb, noun, etc.;
- 
-Let's select those variables
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-parsed_tokens <- parsed_tokens %>% 
-  select(doc_id, token, upos, lemma)
-
-```
-
-Inspect how many nouns appear in the corpus
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-sum(parsed_tokens$upos == "NOUN")
-
-```
-
-Inspect how many verbs appear in the corpus
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-sum(parsed_tokens$upos == "VERB")
-
-```
-
-Inspect how many adjectives appear in the corpus
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-sum(parsed_tokens$upos == "ADJ")
-
-```
-
-We can also inspect all different POS tags in one go. 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-table(parsed_tokens$upos)
-
-```
-An interesting tag is `PROPN`or proper noun that refers to the name (or part of the name) of a unique entity, be it an individual, a place, or an object. To get a feel for what entities we can filter out the proper nouns and then count and sort their lemmas using `count()` from **tidyverse**
-
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-propns <- parsed_tokens %>%
-  filter(upos == "PROPN")
-
-propns %>% count(lemma, sort = TRUE)
+library(tidyverse)
+library(text2vec)
 
 ```
 
 
-Say we are only interested in the nouns in those speeches
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+## Preparing the data
 
-nouns <- parsed_tokens %>%
-  filter(upos == "NOUN")
+Let's read in the Commission speeches
 
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+load("european_commission.Rdata")
+
+dim(commission_speeches)
+names(commission_speeches)
 ```
 
-Let's display their lemmas in a Wordcloud. We'll first use the `split()` function from base R to divide the nouns per speech in a list. We then use `as.tokens()` in **quanteda** to turn that list into a tokens object. We can create a `dfm` and take it from there. 
+We'll tokenise the speeches.  
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
 
-nouns_dfm <- split(nouns$lemma, nouns$doc_id) %>% 
-  as.tokens() %>% 
-  dfm() 
+corpus_speeches <- corpus(commission_speeches)
+tokens_speeches <- tokens(corpus_speeches,
+                          what = "word",
+                          remove_punct = TRUE, 
+                          remove_symbols = TRUE, 
+                          remove_numbers = TRUE,
+                          remove_url = TRUE,
+                          remove_separators = TRUE,
+                          split_hyphens = FALSE,
+                          ) %>%
+  tokens_remove(stopwords(source = "smart"), padding = FALSE)
 
-
-textplot_wordcloud(nouns_dfm, max_words = 50)
-
-```
-
-
-Let's do the same for verbs 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-verbs <- parsed_tokens %>%
-  filter(upos == "VERB")
-
-verbs_dfm <- split(verbs$lemma, verbs$doc_id) %>% 
-  as.tokens() %>% dfm()
-
-textplot_wordcloud(verbs_dfm, max_words = 50)
-
-```
-
-If we want to stitch back together the metadata to our newly created `nouns_dfm` and `verbs_dfm` we can do this as follows:
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-docvars(nouns_dfm) <- inaugural_speeches_df %>% 
-  select(Year, President, FirstName, Party)
-
-docvars(verbs_dfm) <- inaugural_speeches_df %>%
-  select(Year, President, FirstName, Party)
-
-```
-
-We are now in a position to inspect these dfms. For example, we may be interested in what sort of verbs distinguish Republican presidents from Democratic presidents.
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-verbs_dfm_grouped <- verbs_dfm %>% 
-  dfm_group(groups = Party) %>%
-  dfm_subset(Party == "Democratic" | Party == "Republican")
-
-verb_keyness <- textstat_keyness(verbs_dfm_grouped, target = "Republican")
-
-textplot_keyness(verb_keyness,
-                 n = 10,
-                 color = c("red", "blue"))
-
-```
-Let's apply a topic model to the nouns
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-lda_10 <- textmodel_lda(nouns_dfm, 
-                       k = 10,
-                       alpha = 1,
-                       max_iter = 2000)
-
-```
-
-Let's inspect this topic model
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-terms(lda_10, 10)
-```
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-head(lda_10$theta, 10)
-```
-## Other languages
-
-**updipe** allows you to work with pre-trained language models build for more than 65 languages 
-
-![Language models]( language_models.png ){ width=65% }
-
-
-If you want to work with these models you first need to download them. Let's say I want to work with a Dutch corpus
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-udmodel_dutch <- udpipe_download_model(language = "dutch")
-
-str(udmodel_dutch)
-```
-
-I can now start tagging with vector of Dutch documents
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-dutch_documents <- c(d1 = "AZ wordt kampioen dit jaar",
-                     d2 = "Mark Rutte, premier van Nederland, is op weg naar Brussel")
-
-parsed_tokens_dutch <-  udpipe(dutch_documents, udmodel_dutch) %>% 
-  as_tibble()
-
-head(parsed_tokens_dutch)
 
 ```
 
 
-If I have already downloaded the a language, I can load it as follows (if the model is in the current working directory -- otherwise I will need to give it the full path to the file)
+NB: The next few steps draw on [this](https://quanteda.io/articles/pkgdown/replication/text2vec.html) **quanteda** tutorial.
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+We'll select those features that occur at least 10 times 
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
 
-udmodel_dutch <- udpipe_load_model(file = "dutch-alpino-ud-2.5-191206.udpipe")
+feats <- dfm(tokens_speeches) %>%
+    dfm_trim(min_termfreq = 10) %>%
+    featnames()
+```
+
+We'll now select these features from the tokenised speeches. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+tokens_speeches <- tokens_select(tokens_speeches, 
+                                 feats)
 
 ```
+
+Let's inspect which features occur most often
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+tokens_speeches %>%
+  dfm() %>%
+  topfeatures(n = 100,
+              decreasing = TRUE,
+              scheme = c("count")
+)
+  
+
+```
+We'll create a feature-co-occurrence matrix using the `fcm()` function which calculates co-occurrences of features within a user-defined context. We'll choose a window size of 5, but other choices are available
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+speeches_fcm <- fcm(tokens_speeches, 
+                    context = "window", 
+                    window = 5,
+                    tri = TRUE)
+
+dim(speeches_fcm)
+```
+
+Let's see what `speeches_fcm()` looks like.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+speeches_fcm[1:5,1:5]
+```
+
+_Dear_ and _President_ co-occur 221 times in the corpus. _Dear_ and _Regions_ only 16 times. 
+
+## Fitting a GloVe model
+
+We'll now fit a GloVe vector model. GloVe is an unsupervised learning algorithm for obtaining vector representations for words. Training is performed on the feature co-occurrence matrix,  which represents information about global word-word co-occurrence statistics in a corpus.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+glove <- GlobalVectors$new(rank = 50, 
+                           x_max = 10)
+
+wv_main <- glove$fit_transform(speeches_fcm, 
+                               n_iter = 10,
+                               convergence_tol = 0.01, 
+                               n_threads = 8)
+
+dim(wv_main)
+
+```
+
+The model learns two sets of word vectors - main and context. They are essentially the same. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+wv_context <- glove$components
+dim(wv_context)
+```
+
+Following recommendations in the **text2vec** package we sum these vectors. We transpose the `wv_context` object so that it has the same number of rows and columns as `wv_main`
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+word_vectors <- wv_main + t(wv_context)
+
+dim(word_vectors)
+```
+
+We now have 50-dimension word_vectors for all 21516 tokens in our corpus.
+
+## Inspecting the GloVe model
+
+Now it's tme to inspect these word embeddings. For example, we find the nearest neighbors of a word (or a set of words) of interest. Nearest neighbors are those words that are most closely located in the vector space. We can find those using by calculating cosine similarities between the word vector of a target word and all other word vectors.  
+
+We'll use a custom function ([source](https://s-ai-f.github.io/Natural-Language-Processing/Word-embeddings.html)) to finds these similar words It takes in three arguments: the target word, the word_vectors object, and the number of neighbors we want to inspect. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+find_similar_words <- function(word, word_vectors, n = 10) {
+  similarities <- word_vectors[word, , drop = FALSE] %>%
+    sim2(word_vectors, y = ., method = "cosine")
+  
+  similarities[,1] %>% sort(decreasing = TRUE) %>% head(n)
+}
+
+```
+
+The Commissioner speeches span the time period 2007--2014, a time of upheaval in the EU. Let's take a look at the nearest neighbors of 'crisis'. The `drop = FALSE` argument ensure that crisis is not converted to a vector.
+
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+find_similar_words("crisis", word_vectors)
+
+```
+Crisis refers mostly to the Eurocrisis. 
+
+Let's inspect the context of climate
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+find_similar_words("climate", word_vectors)
+
+```
+Global climate change needs to be addressed, that much is clear. 
+
+We can sum vectors to each find neigbors. Let's add crisis + Ireland
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+crisis_Ireland <- word_vectors["crisis", , drop = FALSE] +
+  word_vectors["Ireland", , drop = FALSE] 
+
+```
+
+And find the nearest neighbors of this sum. The sim2 function calculates the cosine similarity between the word vectors of the target word and all other word vectors. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+cos_sim_crisis_Ireland <- sim2(x = word_vectors, y = crisis_Ireland, method = "cosine", norm = "l2")
+head(sort(cos_sim_crisis_Ireland[,1], decreasing = TRUE), 20)
+
+```
+It mostly lists other countries that where also struggling at the time. 
+
+What if we substract the Ireland vector from the crisis vector? 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+crisis_Ireland <- word_vectors["crisis", , drop = FALSE] -
+  word_vectors["Ireland", , drop = FALSE] 
+
+cos_sim_crisis_Ireland <- sim2(x = word_vectors, y = crisis_Ireland, method = "cosine", norm = "l2")
+head(sort(cos_sim_crisis_Ireland[,1], decreasing = TRUE), 10)
+
+```
+This time we get more general crisis terms. 
+
+Inspecting a word embeddings model like so can be useful for a few different tasks:
+
+1. As a list of potential terms for dictionary construction;
+2. As an input to downstream QTA tasks;
+3. As a source for visualization.
+
+Let's take this first task an example. Perhaps we want to develop a sentiment dictionary for Commissioner speeches, but we are less trusting of off-the-shelf sentiment dictionaries because we suspect that these may not capture how sentiment is expressed in Commissioner speeches. One way to go is use a small seed dictionary of positive and negative words, and use word embeddings to inspect what other words are close in the embedding space to these seed words.
+
+For example, we may take as positive words a small set of positive seed words: _good_, _nice_, _excellent_, _positive_, _fortunate_, _correct_, _superior_. And as negative words a small set of negative seed words: _bad_, _nasty_, _poor_, _negative_, _wrong_, _unfortunate_
+
+Let's start by calculating the average vector for good. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+positive <- (word_vectors["good", , drop = FALSE] +
+  word_vectors["nice", , drop = FALSE] +
+  word_vectors["excellent", , drop = FALSE] +
+  word_vectors["positive", , drop = FALSE] + 
+  word_vectors["fortunate", , drop = FALSE] + 
+  word_vectors["correct", , drop = FALSE] + 
+  word_vectors["superior", , drop = FALSE]) /7
+```
+
+And for bad
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+negative <- (word_vectors["bad", , drop = FALSE] +
+  word_vectors["nasty", , drop = FALSE] +
+  word_vectors["poor", , drop = FALSE] +
+  word_vectors["negative", , drop = FALSE] + 
+  word_vectors["wrong", , drop = FALSE] + 
+  word_vectors["unfortunate", , drop = FALSE]) /6
+
+```
+
+We can now inspect the neighbors of our 'positive' seed dictionary. 
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+cos_sim_positive <- sim2(x = word_vectors, y = positive, method = "cosine", norm = "l2")
+head(sort(cos_sim_positive[,1], decreasing = TRUE), 20)
+
+```
+
+This includes some words that seem useful such as encouraging and opportunity and forward. But also the word bad appears.  
+
+Let's do the same for our 'negative' dictionary
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+cos_sim_negative <- sim2(x = word_vectors, y = negative, method = "cosine", norm = "l2")
+head(sort(cos_sim_negative[,1], decreasing = TRUE), 20)
+
+```
+
+Again we see a mix of useful and less useful words. 
 
 ## Exercises
 
-For these exercises we will work with the `parsed_tokens` dataframe that we created in the above script.
 
-1. Create a dataframe `adjs` that contains all adjectives that appear in the corpus of inaugural speeches.
+Estimate new word vectors but this time on a feature co-occurrence matrix with a window size of 5 but with more weight given to words when they appear closer to the target word (see the _count_ and _weight_ arguments in `fcm()`. To estimate this model comment out the code chunk below to run the model) 
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
 
-```
-
-2. Display the most occurring adjectives in the inaugural speeches using `count()`
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-
-```
-
-3. Group the the adjectives by speech and turn them into a dataframe called `adjs_dfm`.
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-```
+#speeches_fcm_weighted <- fcm(tokens_speeches, 
+#                    context = "window", 
+#                    count = "weighted", 
+#                    weights = 1 / (1:5),
+#                    tri = TRUE)
 
 
-4. Append Year, President, FirstName and Party from `inaugural_speeches_df`  as docvars to `adjs_dfm`
+#glove <- GlobalVectors$new(rank = 50, 
+#                           x_max = 10)
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+#wv_main_weighted <- glove$fit_transform(speeches_fcm_weighted, 
+#                                        n_iter = 10,
+#                                        convergence_tol = 0.01, 
+#                                        n_threads = 8)
 
+#wv_context_weighted <- glove$components
+
+#word_vectors_weighted <- wv_main_weighted + t(wv_context_weighted)
 
 ```
 
-5. Inspect `adjs_dfm` using the NRC Emotion Association Lexicon. If you don't recall how to do this, have a look back at lab session 4. Call the output of `dfm_lookuop` as `dfm_inaugural_NRC`.
+2. Compare the nearest neighbors for crisis in both the original and the new model. Are they any different?
 
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+
+#find_similar_words("crisis", word_vectors)
+#find_similar_words("crisis", word_vectors_weighted)
+```
+3. Inspect the nearest neighbors for Greece, Portugal, Spain and Italy and substract the vectors for Netherlands, Germany, Denmark and Austria
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+#southern_northern  <- (word_vectors["Greece", , drop = FALSE] +
+#  word_vectors["Portugal", , drop = FALSE] +
+#  word_vectors["Spain", , drop = FALSE] +
+#  word_vectors["Italy", , drop = FALSE] -
+#  word_vectors["Netherlands", , drop = FALSE] -
+#  word_vectors["Germany", , drop = FALSE] -
+#  word_vectors["Denmark", , drop = FALSE] -
+#  word_vectors["Austria", , drop = FALSE])
+
+
+#cos_sim_southern_northern <- sim2(x = word_vectors, y = southern_northern, method = "cosine", norm = "l2")
+#head(sort(cos_sim_southern_northern[,1], decreasing = TRUE), 20)
 
 ```
 
+4. And turn this vector around
 
-6. Add the count of fear words as a variable `fear` to the docvars of `adjs_dfm` 
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-
-```
-
-**Advanced**
-
-7. Use tidyverse functions to display the mean number of fear words for Repulican and Democratic presidents  (NB: normally we would divide this number by the total number of tokens in a speech). Have a look at [this link](https://dplyr.tidyverse.org/reference/group_by.html) for more info.
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-```
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+#northern_southern  <- (word_vectors["Netherlands", , drop = FALSE] +
+#  word_vectors["Germany", , drop = FALSE] +
+# word_vectors["Denmark", , drop = FALSE] +
+# word_vectors["Austria", , drop = FALSE] -
+# word_vectors["Greece", , drop = FALSE] -
+#  word_vectors["Portugal", , drop = FALSE] -
+#  word_vectors["Spain", , drop = FALSE] -
+#  word_vectors["Italy", , drop = FALSE])
 
 
-8. Download a language model of your choice and inspect a vector of a few sentences using `udpipe`
-
-```{r, echo = TRUE, results = 'verbatim', message = FALSE}
-
-
+#cos_sim_northern_southern <- sim2(x = word_vectors, y = northern_southern, method = "cosine", norm = "l2")
+#head(sort(cos_sim_northern_southern[,1], decreasing = TRUE), 20)
 
 ```
 
+5. Inspect these word vectors further. If you receive a `subscript out of bounds` error, it means that the word does not appear in the corpus.
+
+```{r, echo = TRUE, results = 'verbatim', message = FALSE, warning = FALSE}
+```
